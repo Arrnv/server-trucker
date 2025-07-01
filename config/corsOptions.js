@@ -1,5 +1,6 @@
 const corsOptions = {
-  origin: 'http://localhost:3000',
+  origin: 'https://frontend-bmnm.vercel.app', // ✅ no slash
+
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   credentials: true,
 };

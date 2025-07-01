@@ -1,4 +1,3 @@
-// routes/payments.js
 
 import Stripe from 'stripe';
 import express from 'express';

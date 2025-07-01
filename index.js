@@ -40,7 +40,7 @@ app.use('/plans', planRoutes);
 
 
 app.use('/api/bookings', bookingRoutes);
-app.use('/pay', paymentRoutes);
+// app.use('/pay', paymentRoutes);
 
 app.use(errorHandler);
 
