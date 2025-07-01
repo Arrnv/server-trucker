@@ -36,8 +36,8 @@ router.post('/start-subscription', async (req, res) => {
           quantity: 1,
         },
       ],
-      success_url: `http://localhost:3000/business/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `http://localhost:3000/business/cancel`,
+      success_url: `https://phpstack-1383739-5654472.cloudwaysapps.com/business/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `https://phpstack-1383739-5654472.cloudwaysapps.com/business/cancel`,
     });
 
     res.json({ url: session.url });
