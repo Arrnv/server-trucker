@@ -7,8 +7,8 @@ dotenv.config();
 const JWT_SECRET = process.env.JWT_SECRET;
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: false ,
-  sameSite: 'Lax',
+  secure: true, // <-- set to true in production!
+  sameSite: 'None', // <-- important for cross-origin cookies
   maxAge: 60 * 60 * 1000, // 1 hour
 };
 
