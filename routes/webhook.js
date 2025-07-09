@@ -1,64 +1,34 @@
-// routes/webhook.js
-
 import express from 'express';
 import Stripe from 'stripe';
 import dotenv from 'dotenv';
-import  supabase  from '../utils/supabaseClient.js';
+import supabase from '../utils/supabaseClient.js';
 
 dotenv.config();
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2023-10-16',
-});
-
-const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 const router = express.Router();
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2023-10-16' });
 
-router.post(
-  '/webhook',
-  express.raw({ type: 'application/json' }),
-  async (req, res) => {
-    const sig = req.headers['stripe-signature'];
+router.post('/connect/onboard', async (req, res) => {
+  const { user_id, email } = req.body;
 
-    let event;
-    try {
-      event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
-    } catch (err) {
-      return res.status(400).send(`Webhook error: ${err.message}`);
-    }
+  const account = await stripe.accounts.create({
+    type: 'express',
+    email,
+    capabilities: {
+      card_payments: { requested: true },
+      transfers: { requested: true },
+    },
+  });
 
-    // Handle subscription completed
-    if (event.type === 'checkout.session.completed') {
-      const session = event.data.object;
-      const customerEmail = session.customer_email;
+  await supabase.from('users').update({ stripe_account_id: account.id }).eq('id', user_id);
 
-      const subscriptionId = session.subscription;
+  const accountLink = await stripe.accountLinks.create({
+    account: account.id,
+    refresh_url: `${process.env.CLIENT_URL}/onboarding/refresh`,
+    return_url: `${process.env.CLIENT_URL}/dashboard`,
+    type: 'account_onboarding',
+  });
 
-      // Get Stripe customer and subscription info
-      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-
-      // You’ll need to identify the business using email or metadata
-      const { data: business } = await supabase
-        .from('businesses')
-        .select('id')
-        .eq('owner_email', customerEmail)
-        .maybeSingle();
-
-      if (business) {
-        await supabase
-          .from('business_subscriptions')
-          .update({
-            stripe_customer_id: subscription.customer,
-            stripe_subscription_id: subscription.id,
-            is_active: true,
-            started_at: new Date().toISOString(),
-            expires_at: null,
-          })
-          .eq('business_id', business.id);
-      }
-    }
-
-    res.json({ received: true });
-  }
-);
+  res.json({ url: accountLink.url });
+});
 
 export default router;

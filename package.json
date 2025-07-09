@@ -14,11 +14,14 @@
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
+    "docker": "^1.0.0",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
+    "multer": "^2.0.1",
     "pm2": "^6.0.8",
-    "stripe": "^18.2.1"
+    "stripe": "^18.2.1",
+    "uuid": "^11.1.0"
   }
 }

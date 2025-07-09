@@ -1,12 +1,40 @@
 // controller: businessController.js
 import supabase from '../utils/supabaseClient.js';
+import multer from 'multer';
+import { v4 as uuidv4 } from 'uuid';
+import path from 'path';
+
+// Set up multer for file handling (memory storage for buffer uploads)
+const storage = multer.memoryStorage();
+export const upload = multer({ storage });
 
 export const onboardBusiness = async (req, res) => {
-  const { name, location, contact, website, plan_id, latitude, longitude } = req.body;
-  const owner_email = req.user.email;
-
   try {
-    // 1. Check if business already exists for user
+    if (!req.body) {
+      return res.status(400).json({ message: 'Missing form data' });
+    }
+
+    const {
+      name = '',
+      plan_id = ''
+    } = req.body;
+
+    if (!name || !plan_id) {
+      return res.status(400).json({ message: 'Required fields are missing' });
+    }
+
+    const owner_email = req.user?.email;
+    if (!owner_email) {
+      return res.status(401).json({ message: 'Unauthorized: Missing user email' });
+    }
+
+    const logoFile = req.file;
+
+    console.log('Form data received:', {
+      name, plan_id, hasFile: !!logoFile
+    });
+
+    // 1. Check if business already exists
     const { data: existing } = await supabase
       .from('businesses')
       .select('*')
@@ -17,24 +45,41 @@ export const onboardBusiness = async (req, res) => {
       return res.status(400).json({ message: 'Business already onboarded' });
     }
 
-    // 2. Insert new business including lat/lng
+    // 2. Upload logo to Supabase Storage if provided
+    let logo_url = null;
+    if (logoFile) {
+      const fileExt = path.extname(logoFile.originalname);
+      const fileName = `logos/${uuidv4()}${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('business-logos')
+        .upload(fileName, logoFile.buffer, {
+          contentType: logoFile.mimetype,
+        });
+
+      if (uploadError) throw new Error(`Upload error: ${uploadError.message}`);
+
+      const { data: publicURLData } = supabase.storage
+        .from('business-logos')
+        .getPublicUrl(fileName);
+
+      logo_url = publicURLData.publicUrl;
+    }
+
+    // 3. Insert new business
     const { data: business, error } = await supabase
       .from('businesses')
       .insert([{
         name,
-        location,
-        contact,
-        website,
         owner_email,
-        latitude: latitude ? parseFloat(latitude) : null,
-        longitude: longitude ? parseFloat(longitude) : null
+        logo_url
       }])
       .select()
       .single();
 
     if (error) throw new Error(`Insert error: ${error.message}`);
 
-    // 3. Add subscription
+    // 4. Create subscription
     const { error: subErr } = await supabase
       .from('business_subscriptions')
       .insert([{
@@ -47,14 +92,12 @@ export const onboardBusiness = async (req, res) => {
 
     if (subErr) throw new Error(`Subscription error: ${subErr.message}`);
 
-    return res.status(201).json({ message: 'Business onboarded with plan', business });
+    return res.status(201).json({ message: 'Business onboarded', business });
   } catch (err) {
-    console.error('Business Onboard Error:', err.message);
+    console.error('Onboarding Error:', err.message);
     return res.status(500).json({ message: 'Internal Server Error', error: err.message });
   }
 };
-
-
 
 export const getMyBusiness = async (req, res, next) => {
   try {
@@ -197,30 +240,72 @@ export const updateService = async (req, res, next) => {
 };
 
 
+
+
 export const addDetailForBusiness = async (req, res) => {
-  const {
-    name, location, contact, website, status, timings, rating, tags,
-    latitude, longitude, gallery_urls, video_url, booking_url,
-    placeLabel, placeCategoryLabel, serviceLabel, serviceCategoryLabel,
-    bookings = []
-  } = req.body;
-
-  const owner_email = req.user.email;
-
   try {
+    const {
+      name, location, contact, website, status, timings, rating, tags,
+      latitude, longitude, booking_url,
+      placeLabel, placeCategoryLabel, serviceLabel, serviceCategoryLabel,
+    } = req.body;
+
+    const bookings = req.body.bookings ? JSON.parse(req.body.bookings) : [];
+    const selectedAmenities = req.body.selectedAmenities
+      ? JSON.parse(req.body.selectedAmenities)
+      : [];
+
+    const owner_email = req.user.email;
+
+    // 🔎 Get business and plan
     const { data: businessData, error: businessErr } = await supabase
       .from('businesses')
       .select(`id, business_subscriptions (is_active, subscription_plans (*))`)
       .eq('owner_email', owner_email)
       .maybeSingle();
 
-    if (businessErr || !businessData) return res.status(404).json({ message: 'Business not found' });
+    if (businessErr || !businessData)
+      return res.status(404).json({ message: 'Business not found' });
 
     const businessId = businessData.id;
     const activeSubscription = (businessData.business_subscriptions || []).find(sub => sub.is_active);
     const plan = activeSubscription?.subscription_plans;
     if (!plan) return res.status(403).json({ message: 'No active subscription plan' });
 
+    // 🖼️ Upload gallery images
+    const galleryUrls = [];
+    if (plan.allow_gallery && req.files?.galleryFiles) {
+      for (const file of req.files.galleryFiles) {
+        const ext = path.extname(file.originalname);
+        const filename = `gallery/${uuidv4()}${ext}`;
+        const { error: uploadError } = await supabase.storage
+          .from('service-gallery')
+          .upload(filename, file.buffer, {
+            contentType: file.mimetype,
+          });
+        if (uploadError) throw new Error(`Gallery upload failed: ${uploadError.message}`);
+        const { data } = supabase.storage.from('service-gallery').getPublicUrl(filename);
+        galleryUrls.push(data.publicUrl);
+      }
+    }
+
+    // 🎥 Upload video
+    let videoUrl = null;
+    if (plan.allow_video && req.files?.videoFile?.[0]) {
+      const file = req.files.videoFile[0];
+      const ext = path.extname(file.originalname);
+      const filename = `videos/${uuidv4()}${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from('service-videos')
+        .upload(filename, file.buffer, {
+          contentType: file.mimetype,
+        });
+      if (uploadError) throw new Error(`Video upload failed: ${uploadError.message}`);
+      const { data } = supabase.storage.from('service-videos').getPublicUrl(filename);
+      videoUrl = data.publicUrl;
+    }
+
+    // 🏷️ Insert labels if new
     let placeCategory = null, serviceCategory = null;
 
     if (placeLabel && placeCategoryLabel) {
@@ -239,6 +324,7 @@ export const addDetailForBusiness = async (req, res) => {
       serviceCategory = sc;
     }
 
+    // 📦 Create detail record
     const detailPayload = {
       business_id: businessId,
       name, location, contact, website, status, timings,
@@ -247,9 +333,10 @@ export const addDetailForBusiness = async (req, res) => {
       longitude: parseFloat(longitude),
       tags: typeof tags === 'string' ? tags.split(',').map(t => t.trim()) : tags || [],
       booking_url: plan.allow_booking ? booking_url || null : null,
-      video_url: plan.allow_video ? video_url || null : null,
-      gallery_urls: plan.allow_gallery ? (Array.isArray(gallery_urls) ? gallery_urls : gallery_urls?.split(',').map(url => url.trim())).filter(Boolean) : [],
+      video_url: videoUrl,
+      gallery_urls: galleryUrls,
     };
+
     if (placeCategory?.id) detailPayload.place_category_id = placeCategory.id;
     if (serviceCategory?.id) detailPayload.service_category_id = serviceCategory.id;
 
@@ -261,6 +348,7 @@ export const addDetailForBusiness = async (req, res) => {
 
     if (insertErr) throw new Error(`Insert error: ${insertErr.message}`);
 
+    // 💬 Booking options
     if (plan.allow_booking && bookings.length > 0) {
       const bookingOptions = bookings.map(b => ({
         id: b.id,
@@ -271,6 +359,19 @@ export const addDetailForBusiness = async (req, res) => {
       }));
       const { error: bookErr } = await supabase.from('service_booking_options').insert(bookingOptions);
       if (bookErr) throw new Error(`Booking options error: ${bookErr.message}`);
+    }
+
+    // 🛎️ Insert amenities
+    if (Array.isArray(selectedAmenities) && selectedAmenities.length > 0) {
+      const amenityRelations = selectedAmenities.map(amenityId => ({
+        detail_id: newDetail.id,
+        amenity_id: amenityId
+      }));
+      const { error: amenityErr } = await supabase
+        .from('detail_amenities')
+        .insert(amenityRelations);
+
+      if (amenityErr) throw new Error(`Amenity association error: ${amenityErr.message}`);
     }
 
     return res.status(201).json({ message: 'New service and booking options added successfully' });
@@ -286,19 +387,19 @@ export const getAlertsForService = async (req, res) => {
   const { id } = req.params;
 
   try {
-    const { data, error } = await supabase
-      .from('service_dashboard_alerts')
-      .select(`
-        *,
-        service_bookings (
-          status,
-          created_at,
-          updated_at,
-          user_id
-        )
-      `)
-      .eq('detail_id', id)
-      .order('created_at', { ascending: false });
+
+   const { data, error } = await supabase
+  .from('service_dashboard_alerts')
+  .select(`
+    *,
+    service_bookings (
+      status,
+      created_at,
+      user_id
+    )
+  `)
+  .eq('detail_id', id)
+  .order('created_at', { ascending: false });
 
     if (error) return res.status(400).json({ error: error.message });
 
@@ -307,7 +408,6 @@ export const getAlertsForService = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch alerts' });
   }
 };
-
 
 export const getTodayFeedbacks = async (req, res) => {
   const { detailId } = req.params;

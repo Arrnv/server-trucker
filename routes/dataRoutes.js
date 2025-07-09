@@ -8,11 +8,12 @@ router.get('/services', async (req, res) => {
     const { data: services, error } = await supabase
       .from('services')
       .select(`
-        id, label,
+        id, label, icon_url,
         subcategories:service_categories (
           id, label,
           details:details (
-            id, name, rating, location, status, timings, contact, website, tags, latitude, longitude
+            id, name, rating, location, status, timings, contact, website, tags, latitude, longitude,
+            service_category:service_categories ( icon_url )
           )
         )
       `);
@@ -36,14 +37,16 @@ router.get('/places', async (req, res) => {
   const { data: places, error: placeErr } = await supabase
     .from('places')
     .select(`
-      id, label,
+      id, label, icon_url,
       subcategories:place_categories (
         id, label,
         details:details (
-          id, name, rating, location, status, timings, contact, website, tags, latitude, longitude
+          id, name, rating, location, status, timings, contact, website, tags, latitude, longitude,
+          place_category:place_categories ( icon_url )
         )
       )
     `);
+
 
   if (placeErr) return res.status(500).json({ error: placeErr.message });
   res.json({ data: places });
@@ -108,10 +111,23 @@ router.get('/details/:type/:id', async (req, res) => {
   else return res.status(400).json({ error: 'Invalid type. Must be "service" or "place".' });
 
   try {
-    const { data: details, error: detailsError } = await supabase
-      .from('details')
-      .select(`*, bookings(id, note, price, booking_time)`) // Include bookings
-      .eq(column, id);
+  const { data: details, error: detailsError } = await supabase
+  .from('details')
+  .select(`
+    *,
+    bookings(id, note, price, booking_time),
+    service_category:service_categories!details_service_category_id_fkey(icon_url),
+    place_category:place_categories!details_place_category_id_fkey(icon_url),
+    detail_amenities (
+      amenities (
+        id,
+        name,
+        icon_url
+      )
+    )
+  `)
+  .eq(column, id);
+
 
     if (detailsError) return res.status(500).json({ error: detailsError.message });
     if (!details || details.length === 0)

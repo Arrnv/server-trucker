@@ -16,7 +16,10 @@ import planRoutes from './routes/planRoutes.js';
 import bookingRoutes from './routes/bookingroutes.js';
 import customerRoutes from './routes/customerRoutes.js';
 import paymentRoutes from './routes/payments.js'; // adjust path accordingly
-
+import webhookRoute from './controllers/stripeWebhook.js';
+import stripeRoutes from './routes/stripe.js';
+import amenitiesRouter from './routes/amenities.js';
+import searchRoutes from './routes/search.js';
 
 dotenv.config();
 const app = express();
@@ -27,6 +30,7 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser()); 
 
+
 app.use('/api/auth', authRoutes);
 app.use('/api', dataRoutes);
 app.use('/businesses', businessRoutes); 
@@ -34,13 +38,18 @@ app.use('/api/analytics',analyticsRoutes)
 app.use('/api/reviews', feedbackRoutes); // This must be exact
 app.use('/api/admin', adminRoutes);
 app.use('/admin', admin)
+app.use('/api/search', searchRoutes);
 
 app.use('/customer', customerRoutes);
 app.use('/plans', planRoutes); 
 
-
+app.use('/stripe', webhookRoute);
 app.use('/api/bookings', bookingRoutes);
-// app.use('/pay', paymentRoutes);
+app.use('/pay', paymentRoutes);
+app.use('/stripe', stripeRoutes);
+// app.js or index.js
+app.use('/api/amenities', amenitiesRouter);
+
 
 app.use(errorHandler);
 

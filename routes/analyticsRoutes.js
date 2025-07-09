@@ -31,6 +31,7 @@ router.get('/repeat-visitors/:businessId', async (req, res) => {
     .select('id')
     .eq('business_id', businessId);
 
+    
   if (detailError) return res.status(500).json({ error: detailError.message });
 
   const detailIds = details.map(d => d.id);
