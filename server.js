@@ -53,6 +53,6 @@ app.use('/api/amenities', amenitiesRouter);
 
 app.use(errorHandler);
 
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+app.listen(3000, () => {
+  console.log(`Server running on port ${3000}`);
 });
