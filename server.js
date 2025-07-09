@@ -52,7 +52,8 @@ app.use('/api/amenities', amenitiesRouter);
 
 
 app.use(errorHandler);
+const PORT = process.env.PORT || 8000;
 
-app.listen(3000, () => {
-  console.log(`Server running on port ${3000}`);
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
