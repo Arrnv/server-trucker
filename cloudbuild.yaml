@@ -1,8 +1,10 @@
 steps:
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'gcr.io/dialensearch-d0fee/Server', '.']
+    args: ['build', '-t', 'gcr.io/dialensearch-d0fee/server', '.']
+
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/dialensearch-d0fee/Server']
+    args: ['push', 'gcr.io/dialensearch-d0fee/server']
+
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -20,3 +22,6 @@ steps:
         '--set-secrets',
         '.env=server-env:latest'
       ]
+
+options:
+  logging: CLOUD_LOGGING_ONLY
