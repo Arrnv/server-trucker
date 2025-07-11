@@ -12,15 +12,11 @@ steps:
         'run',
         'deploy',
         'server',
-        '--image',
-        'gcr.io/dialensearch-d0fee/server',
-        '--region',
-        'us-central1',
-        '--platform',
-        'managed',
+        '--image', 'gcr.io/dialensearch-d0fee/server',
+        '--region', 'us-central1',
+        '--platform', 'managed',
         '--allow-unauthenticated',
-        '--set-secrets',
-        '.env=server-env:latest'
+        '--set-secrets', 'SUPABASE_URL=server-env:latest,SUPABASE_ANON_KEY=server-env:latest,JWT_SECRET=server-env:latest,STRIPE_SECRET_KEY=server-env:latest,STRIPE_PUBLISHABLE_KEY=server-env:latest,STRIPE_WEBHOOK_SECRET=server-env:latest,CLIENT_URL=server-env:latest,NEXT_PUBLIC_API_URL=server-env:latest'
       ]
 
 options:
