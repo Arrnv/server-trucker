@@ -10,7 +10,8 @@ steps:
         '--region', 'us-central1',
         '--platform', 'managed',
         '--allow-unauthenticated',
-        '--set-secrets=SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest,JWT_SECRET=JWT_SECRET:latest,STRIPE_SECRET_KEY=STRIPE_SECRET_KEY:latest,STRIPE_PUBLISHABLE_KEY=STRIPE_PUBLISHABLE_KEY:latest,STRIPE_WEBHOOK_SECRET=STRIPE_WEBHOOK_SECRET:latest,NEXT_PUBLIC_API_URL=NEXT_PUBLIC_API_URL:latest'
+        '--set-env-vars', 'NODE_ENV=production',
+        '--set-secrets', '.env=server-env:latest'
       ]
 
 options:
