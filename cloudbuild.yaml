@@ -1,10 +1,4 @@
 steps:
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'gcr.io/dialensearch-d0fee/server', '.']
-
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/dialensearch-d0fee/server']
-
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -12,11 +6,11 @@ steps:
         'run',
         'deploy',
         'server',
-        '--image', 'gcr.io/dialensearch-d0fee/server',
+        '--source', '.',
         '--region', 'us-central1',
         '--platform', 'managed',
         '--allow-unauthenticated',
-        '--set-secrets', 'SUPABASE_URL=server-env:latest,SUPABASE_ANON_KEY=server-env:latest,JWT_SECRET=server-env:latest,STRIPE_SECRET_KEY=server-env:latest,STRIPE_PUBLISHABLE_KEY=server-env:latest,STRIPE_WEBHOOK_SECRET=server-env:latest,CLIENT_URL=server-env:latest,NEXT_PUBLIC_API_URL=server-env:latest'
+        '--set-secrets=SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest,JWT_SECRET=JWT_SECRET:latest,STRIPE_SECRET_KEY=STRIPE_SECRET_KEY:latest,STRIPE_PUBLISHABLE_KEY=STRIPE_PUBLISHABLE_KEY:latest,STRIPE_WEBHOOK_SECRET=STRIPE_WEBHOOK_SECRET:latest,NEXT_PUBLIC_API_URL=NEXT_PUBLIC_API_URL:latest'
       ]
 
 options:
