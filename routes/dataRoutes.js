@@ -102,34 +102,38 @@ router.get('/details/:id/booking-options', async (req, res) => {
 
 
 
-router.get('/details/:type/:id', async (req, res) => {
-  const { type, id } = req.params;
-  let column = null;
+router.get('/details/:type', async (req, res) => {
+  const { type } = req.params;
+  const ids = req.query.ids; // Accepts comma-separated IDs, e.g., "1,2,3"
 
+  if (!ids) return res.status(400).json({ error: 'Missing ids query param.' });
+
+  let column = null;
   if (type === 'service') column = 'service_category_id';
   else if (type === 'place') column = 'place_category_id';
   else return res.status(400).json({ error: 'Invalid type. Must be "service" or "place".' });
 
+  const idArray = ids.split(',');
+
   try {
-  const { data: details, error: detailsError } = await supabase
-  .from('details')
-  .select(`
-    *,
-    bookings(id, note, price, booking_time),
-    service_category:service_categories!details_service_category_id_fkey(icon_url),
-    place_category:place_categories!details_place_category_id_fkey(icon_url),
-    detail_amenities (
-      amenities (
-        id,
-        name,
-        icon_url
-      )
-    )
-  `)
-  .eq(column, id);
+    const { data: details, error } = await supabase
+      .from('details')
+      .select(`
+        *,
+        bookings(id, note, price, booking_time),
+        service_category:service_categories!details_service_category_id_fkey(icon_url),
+        place_category:place_categories!details_place_category_id_fkey(icon_url),
+        detail_amenities (
+          amenities (
+            id,
+            name,
+            icon_url
+          )
+        )
+      `)
+      .in(column, idArray);  // <-- Allow multiple values using `.in`
 
-
-    if (detailsError) return res.status(500).json({ error: detailsError.message });
+    if (error) return res.status(500).json({ error: error.message });
     if (!details || details.length === 0)
       return res.status(404).json({ error: 'No matching details found.' });
 
@@ -139,6 +143,7 @@ router.get('/details/:type/:id', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
 
 
 export default router;

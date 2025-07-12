@@ -5,20 +5,20 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const JWT_SECRET = process.env.JWT_SECRET;
-const COOKIE_OPTIONS = {
-  httpOnly: true,
-  secure: false ,
-  sameSite: 'Lax',
-  maxAge: 60 * 60 * 1000, 
-};
-
-
 // const COOKIE_OPTIONS = {
 //   httpOnly: true,
-//   secure: true, // 
-//   sameSite: 'None', //
-//   maxAge: 60 * 60 * 1000, // 1 hour
+//   secure: false ,
+//   sameSite: 'Lax',
+//   maxAge: 60 * 60 * 1000, 
 // };
+
+
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: true, // 
+  sameSite: 'None', //
+  maxAge: 60 * 60 * 1000, // 1 hour
+};
 export const signup = async (req, res, next) => {
   const { email, password, fullName, role } = req.body;
 
