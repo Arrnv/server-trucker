@@ -58,8 +58,8 @@ router.get('/services/stats/views', getServiceViewStats);
 router.get('/services/stats/feedback', getServiceFeedbackStats);
 router.get('/services/stats/top-rated', getTopRatedServices);       
 router.get('/services/stats/most-viewed', getMostViewedServices); 
-router.get('/services/stats/monthly', getMonthlyStats)
-router.get('/services/stats/by-category', getCategoryStats)
-router.get('/services/stats/status-summary',getStatusStats)  
+router.get('/services/stats/monthly', getMonthlyStats);
+router.get('/services/stats/by-category', getCategoryStats);
+router.get('/services/stats/status-summary',getStatusStats) ; 
 router.get('/services/stats/top-revenue', getTopRevenueServices);
 export default router;
