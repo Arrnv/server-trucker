@@ -143,6 +143,47 @@ router.get('/details/:type', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+// In your Express router
+
+router.get('/details/by-id', async (req, res) => {
+  const ids = req.query.ids;
+
+  if (!ids) {
+    return res.status(400).json({ error: 'Missing ids query param.' });
+  }
+
+  const idArray = ids.split(',');
+
+  const { data: details, error } = await supabase
+    .from('details')
+    .select(
+      `
+      *,
+      bookings(id, note, price, booking_time),
+      service_category:service_categories!details_service_category_id_fkey(icon_url),
+      place_category:place_categories!details_place_category_id_fkey(icon_url),
+      detail_amenities (
+        amenities (
+          id,
+          name,
+          icon_url
+        )
+      )
+    `
+    )
+    .in('id', idArray);
+
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+  if (!details || details.length === 0) {
+    return res.status(404).json({ error: 'Detail not found.' });
+  }
+
+  res.status(200).json(details);
+});
+
 
 
 

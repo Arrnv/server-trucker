@@ -2,6 +2,7 @@ const allowedOrigins = [
   'https://frontend-bmnm.vercel.app',
   'https://desi22.com',
   'https://www.desi22.com',
+  "http://localhost:3000"
 ];
 
 const corsOptions = {

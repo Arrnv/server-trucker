@@ -1,9 +1,13 @@
 import express from 'express';
 import { signup, login, getProfile,logout } from '../controllers/authController.js';
 import authenticate from '../middlewares/authMiddleware.js';
+// authRoutes.js
+import { startGoogleLogin, googleCallback} from '../controllers/authController.js';
 
 const router = express.Router();
 
+router.get('/google', startGoogleLogin);
+router.get('/google/callback', googleCallback);
 router.post('/signup', signup);
 router.post('/login', login);
 router.post('/logout', logout);
