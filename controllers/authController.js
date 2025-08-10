@@ -121,11 +121,13 @@ export const logout = async (req, res) => {
 import querystring from 'querystring';
 
 export const startGoogleLogin = async (req, res) => {
-  const role = req.query.role || 'visitor'; // get role from query, fallback to visitor
+  const role = req.query.role || 'visitor'; // fallback role
+  const intent = req.query.intent || 'login'; // login or signup, default login
+
   const redirectUri = `${process.env.BACKEND_URL}/api/auth/google/callback`;
 
-  // encode role inside the 'state' param as JSON string (URI encoded)
-  const state = encodeURIComponent(JSON.stringify({ role }));
+  // encode both role and intent as JSON in state param
+  const state = encodeURIComponent(JSON.stringify({ role, intent }));
 
   const params = {
     client_id: process.env.GOOGLE_CLIENT_ID,
@@ -134,7 +136,7 @@ export const startGoogleLogin = async (req, res) => {
     scope: 'openid email profile',
     access_type: 'offline',
     prompt: 'consent',
-    state,  // <--- include state with role here
+    state,  // pass role + intent here
   };
 
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${querystring.stringify(params)}`;
@@ -147,20 +149,20 @@ export const googleCallback = async (req, res, next) => {
   if (!code) return res.status(400).json({ message: "Missing code" });
 
   try {
-    // Default role fallback
     let role = 'visitor';
+    let intent = 'login';  // default intent
 
-    // Parse state param if exists to extract role
     if (stateParam) {
       try {
         const parsedState = JSON.parse(decodeURIComponent(stateParam));
         if (parsedState.role) role = parsedState.role;
+        if (parsedState.intent) intent = parsedState.intent;
       } catch (e) {
         console.warn('Failed to parse OAuth state param:', e.message);
       }
     }
 
-    // 1️⃣ Exchange code for tokens
+    // Exchange code for tokens
     const tokenRes = await axios.post("https://oauth2.googleapis.com/token", null, {
       params: {
         client_id: process.env.GOOGLE_CLIENT_ID,
@@ -179,7 +181,7 @@ export const googleCallback = async (req, res, next) => {
     const avatarUrl = userInfo.picture || null;
     const googleId = userInfo.sub || null;
 
-    // 2️⃣ Fetch existing user
+    // Check if user exists
     const { data: existingUser } = await supabaseAdmin
       .from("users")
       .select("*")
@@ -188,13 +190,13 @@ export const googleCallback = async (req, res, next) => {
 
     let dbUser;
 
-    // 3️⃣ If not exists → create with dynamic role from OAuth flow
     if (!existingUser) {
+      // New user signup flow
       const payload = {
         email,
         full_name: fullName,
         password: null,
-        role, // <--- use dynamic role here
+        role,  // from OAuth state
         google_id: googleId,
         avatar_url: avatarUrl,
       };
@@ -208,7 +210,7 @@ export const googleCallback = async (req, res, next) => {
       if (insertError) throw insertError;
       dbUser = newUser;
     } else {
-      // Update Google info if needed
+      // Existing user login flow: update if needed
       const updates = {};
 
       if (avatarUrl && existingUser.avatar_url !== avatarUrl) updates.avatar_url = avatarUrl;
@@ -228,19 +230,23 @@ export const googleCallback = async (req, res, next) => {
       }
     }
 
-    // 4️⃣ Create JWT
+    // Create JWT token
     const token = jwt.sign(
       { id: dbUser.id, email: dbUser.email, fullName: dbUser.full_name, role: dbUser.role },
       process.env.JWT_SECRET,
       { expiresIn: "1h" }
     );
 
-    // 5️⃣ Decide redirect URL based on role
+    // Decide redirect based on role and intent
     let redirectUrl = "/";
-    if (dbUser.role === "business") redirectUrl = "/business/onboarding";
-    if (dbUser.role === "admin") redirectUrl = "/admin/dashboard";
 
-    // 6️⃣ Set cookie & redirect
+    if (dbUser.role === "business") {
+      redirectUrl = intent === "signup" ? "/business/onboarding" : "/business/dashboard";
+    } else if (dbUser.role === "admin") {
+      redirectUrl = "/admin/dashboard";
+    }
+
+    // Set cookie and redirect
     res.cookie("token", token, COOKIE_OPTIONS);
     return res.redirect(`${process.env.NEXT_PUBLIC_API_URL}${redirectUrl}`);
 
@@ -249,3 +255,4 @@ export const googleCallback = async (req, res, next) => {
     next(err);
   }
 };
+
