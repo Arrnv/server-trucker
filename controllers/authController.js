@@ -6,20 +6,20 @@ import axios from "axios";
 import supabaseAdmin from '../utils/supabaseAdmin.js';
 dotenv.config();
 
-const COOKIE_OPTIONS = {
-  httpOnly: true,
-  secure: false ,
-  sameSite: 'Lax',
-  maxAge: 60 * 60 * 1000, 
-};
-
-
 // const COOKIE_OPTIONS = {
 //   httpOnly: true,
-//   secure: true, // 
-//   sameSite: 'None', //
-//   maxAge: 60 * 60 * 1000, // 1 hour
+//   secure: false ,
+//   sameSite: 'Lax',
+//   maxAge: 60 * 60 * 1000, 
 // };
+
+
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: true, // 
+  sameSite: 'None', //
+  maxAge: 60 * 60 * 1000, // 1 hour
+};
 const JWT_SECRET = process.env.JWT_SECRET;
 
 // ----------------- signup (email/password) -----------------
@@ -118,81 +118,107 @@ export const logout = async (req, res) => {
 };
 
 // ----------------- start Google OAuth (redirect user to Google) -----------------
+import querystring from 'querystring';
+
 export const startGoogleLogin = async (req, res) => {
+  const role = req.query.role || 'visitor'; // get role from query, fallback to visitor
   const redirectUri = `${process.env.BACKEND_URL}/api/auth/google/callback`;
 
-  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(process.env.GOOGLE_CLIENT_ID)}&redirect_uri=${encodeURIComponent(
-    redirectUri
-  )}&response_type=code&scope=openid%20email%20profile&access_type=offline&prompt=consent`;
+  // encode role inside the 'state' param as JSON string (URI encoded)
+  const state = encodeURIComponent(JSON.stringify({ role }));
+
+  const params = {
+    client_id: process.env.GOOGLE_CLIENT_ID,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: 'openid email profile',
+    access_type: 'offline',
+    prompt: 'consent',
+    state,  // <--- include state with role here
+  };
+
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${querystring.stringify(params)}`;
 
   return res.redirect(authUrl);
 };
 
-// ----------------- google callback -----------------
 export const googleCallback = async (req, res, next) => {
-  const { code } = req.query;
-  if (!code) return res.status(400).json({ message: 'Missing code' });
+  const { code, state: stateParam } = req.query;
+  if (!code) return res.status(400).json({ message: "Missing code" });
 
   try {
+    // Default role fallback
+    let role = 'visitor';
+
+    // Parse state param if exists to extract role
+    if (stateParam) {
+      try {
+        const parsedState = JSON.parse(decodeURIComponent(stateParam));
+        if (parsedState.role) role = parsedState.role;
+      } catch (e) {
+        console.warn('Failed to parse OAuth state param:', e.message);
+      }
+    }
+
     // 1️⃣ Exchange code for tokens
-    const tokenRes = await axios.post('https://oauth2.googleapis.com/token', null, {
+    const tokenRes = await axios.post("https://oauth2.googleapis.com/token", null, {
       params: {
         client_id: process.env.GOOGLE_CLIENT_ID,
         client_secret: process.env.GOOGLE_CLIENT_SECRET,
         code,
-        grant_type: 'authorization_code',
+        grant_type: "authorization_code",
         redirect_uri: `${process.env.BACKEND_URL}/api/auth/google/callback`,
       },
     });
 
     const { id_token } = tokenRes.data;
-    const userInfo = JSON.parse(Buffer.from(id_token.split('.')[1], 'base64').toString());
+    const userInfo = JSON.parse(Buffer.from(id_token.split(".")[1], "base64").toString());
 
     const email = userInfo.email;
-    const fullName = userInfo.name || '';
+    const fullName = userInfo.name || "";
     const avatarUrl = userInfo.picture || null;
-    const googleId = userInfo.sub || null; // Google account ID
+    const googleId = userInfo.sub || null;
 
-    // 2️⃣ Try fetching existing user
-    const { data: existingUser, error: fetchError } = await supabaseAdmin
-      .from('users')
-      .select('*')
-      .eq('email', email)
-      .maybeSingle(); // safer than .single() for "not found"
+    // 2️⃣ Fetch existing user
+    const { data: existingUser } = await supabaseAdmin
+      .from("users")
+      .select("*")
+      .eq("email", email)
+      .maybeSingle();
 
     let dbUser;
 
-    // 3️⃣ If user does not exist → insert
+    // 3️⃣ If not exists → create with dynamic role from OAuth flow
     if (!existingUser) {
       const payload = {
         email,
         full_name: fullName,
-        password: null,       // No password for Google sign-in
-        role: 'visitor',
-        google_id: googleId,  // NEW text column for storing Google ID
-        avatar_url: avatarUrl // optional if your table has this column
+        password: null,
+        role, // <--- use dynamic role here
+        google_id: googleId,
+        avatar_url: avatarUrl,
       };
 
       const { data: newUser, error: insertError } = await supabaseAdmin
-        .from('users')
+        .from("users")
         .insert([payload])
         .select()
         .single();
 
       if (insertError) throw insertError;
       dbUser = newUser;
-    } 
-    // 4️⃣ If user exists → update Google info if needed
-    else {
+    } else {
+      // Update Google info if needed
       const updates = {};
+
       if (avatarUrl && existingUser.avatar_url !== avatarUrl) updates.avatar_url = avatarUrl;
       if (googleId && existingUser.google_id !== googleId) updates.google_id = googleId;
 
       if (Object.keys(updates).length > 0) {
         const { data: updatedUser, error: updateError } = await supabaseAdmin
-          .from('users')
+          .from("users")
           .update(updates)
-          .eq('id', existingUser.id)
+          .eq("id", existingUser.id)
           .select()
           .single();
         if (updateError) throw updateError;
@@ -202,19 +228,24 @@ export const googleCallback = async (req, res, next) => {
       }
     }
 
-    // 5️⃣ Create your own JWT
+    // 4️⃣ Create JWT
     const token = jwt.sign(
       { id: dbUser.id, email: dbUser.email, fullName: dbUser.full_name, role: dbUser.role },
       process.env.JWT_SECRET,
-      { expiresIn: '1h' }
+      { expiresIn: "1h" }
     );
 
+    // 5️⃣ Decide redirect URL based on role
+    let redirectUrl = "/";
+    if (dbUser.role === "business") redirectUrl = "/business/onboarding";
+    if (dbUser.role === "admin") redirectUrl = "/admin/dashboard";
+
     // 6️⃣ Set cookie & redirect
-    res.cookie('token', token, COOKIE_OPTIONS);
-    return res.redirect(process.env.NEXT_PUBLIC_API_URL);
+    res.cookie("token", token, COOKIE_OPTIONS);
+    return res.redirect(`${process.env.NEXT_PUBLIC_API_URL}${redirectUrl}`);
 
   } catch (err) {
-    console.error('Google OAuth error:', err.response?.data || err.message);
+    console.error("Google OAuth error:", err.response?.data || err.message);
     next(err);
   }
 };

@@ -185,6 +185,129 @@ router.get('/details/by-id', async (req, res) => {
 });
 
 
+// Add this route somewhere before export default router;
 
+router.get('/subcategories', async (req, res) => {
+  const idsQuery = req.query.ids;
+
+  if (!idsQuery) {
+    return res.status(400).json({ error: 'Missing ids query parameter' });
+  }
+
+  const ids = idsQuery.split(',');
+
+  try {
+    // Fetch matching service categories
+    const { data: serviceCategories, error: serviceErr } = await supabase
+      .from('service_categories')
+      .select('id, label')
+      .in('id', ids);
+
+    if (serviceErr) {
+      console.error('Error fetching service categories:', serviceErr.message);
+      return res.status(500).json({ error: serviceErr.message });
+    }
+
+    // Fetch matching place categories
+    const { data: placeCategories, error: placeErr } = await supabase
+      .from('place_categories')
+      .select('id, label')
+      .in('id', ids);
+
+    if (placeErr) {
+      console.error('Error fetching place categories:', placeErr.message);
+      return res.status(500).json({ error: placeErr.message });
+    }
+
+    // Add a 'type' property to distinguish between service/place
+    const services = (serviceCategories || []).map((c) => ({ ...c, type: 'service' }));
+    const places = (placeCategories || []).map((c) => ({ ...c, type: 'place' }));
+
+    return res.status(200).json({ data: [...services, ...places] });
+  } catch (err) {
+    console.error('Unexpected error fetching subcategories:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// ✅ GET /api/business/:id - Fetch full business detail
+router.get('/business/:id', async (req, res) => {
+  const { id } = req.params;
+
+  if (!id) {
+    return res.status(400).json({ error: 'Missing business ID.' });
+  }
+
+  try {
+    // Fetch main detail
+    const { data: detail, error: detailErr } = await supabase
+      .from('details')
+      .select(`
+        *,
+        service_category:service_categories!details_service_category_id_fkey(icon_url, label),
+        place_category:place_categories!details_place_category_id_fkey(icon_url, label),
+        detail_amenities (
+          amenities (
+            id,
+            name,
+            icon_url
+          )
+        ),
+        bookings(id, note, price, booking_time)
+      `)
+      .eq('id', id)
+      .single(); // We expect a single business
+
+    if (detailErr) {
+      console.error("🔥 Supabase error:", detailErr.message);
+      return res.status(500).json({ error: detailErr.message });
+    }
+
+    if (!detail) {
+      return res.status(404).json({ error: 'Business not found.' });
+    }
+
+    // Fetch reviews
+    const { data: reviews, error: reviewErr } = await supabase
+      .from('feedback')
+      .select(`
+        id,
+        rating,
+        comment,
+        created_at,
+        user:users(full_name, avatar_url)
+      `)
+      .eq('detail_id', id)
+      .order('created_at', { ascending: false });
+
+
+    if (reviewErr) {
+      console.error("🔥 Supabase error (reviews):", reviewErr.message);
+      return res.status(500).json({ error: reviewErr.message });
+    }
+
+    // Fetch booking options
+    const { data: bookingOptions, error: bookingErr } = await supabase
+      .from('service_booking_options')
+      .select('*')
+      .eq('detail_id', id);
+
+    if (bookingErr) {
+      console.error("🔥 Supabase error (booking options):", bookingErr.message);
+      return res.status(500).json({ error: bookingErr.message });
+    }
+
+    // Return combined object
+    return res.status(200).json({
+      ...detail,
+      reviews: reviews || [],
+      bookingOptions: bookingOptions || [],
+    });
+
+  } catch (err) {
+    console.error("🔥 Unexpected error:", err.message);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
 
 export default router;
