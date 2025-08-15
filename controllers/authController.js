@@ -121,13 +121,16 @@ export const logout = async (req, res) => {
 import querystring from 'querystring';
 
 export const startGoogleLogin = async (req, res) => {
-  const role = req.query.role || 'visitor'; // fallback role
-  const intent = req.query.intent || 'login'; // login or signup, default login
+  const role = req.query.role || 'visitor';
+  const intent = req.query.intent || 'login';
+  const platform = req.query.platform || 'web';
+  const mobileRedirectUri = req.query.redirect_uri || null; 
 
   const redirectUri = `${process.env.BACKEND_URL}/api/auth/google/callback`;
 
-  // encode both role and intent as JSON in state param
-  const state = encodeURIComponent(JSON.stringify({ role, intent }));
+  const state = encodeURIComponent(
+    JSON.stringify({ role, intent, platform, mobileRedirectUri })
+  );
 
   const params = {
     client_id: process.env.GOOGLE_CLIENT_ID,
@@ -136,7 +139,7 @@ export const startGoogleLogin = async (req, res) => {
     scope: 'openid email profile',
     access_type: 'offline',
     prompt: 'consent',
-    state,  // pass role + intent here
+    state,
   };
 
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${querystring.stringify(params)}`;
@@ -150,19 +153,23 @@ export const googleCallback = async (req, res, next) => {
 
   try {
     let role = 'visitor';
-    let intent = 'login';  // default intent
+    let intent = 'login';  
+    let platform = 'web';
+    let mobileRedirectUri = null;
 
     if (stateParam) {
       try {
         const parsedState = JSON.parse(decodeURIComponent(stateParam));
-        if (parsedState.role) role = parsedState.role;
-        if (parsedState.intent) intent = parsedState.intent;
+        role = parsedState.role || role;
+        intent = parsedState.intent || intent;
+        platform = parsedState.platform || platform;
+        mobileRedirectUri = parsedState.mobileRedirectUri || null;
       } catch (e) {
         console.warn('Failed to parse OAuth state param:', e.message);
       }
     }
 
-    // Exchange code for tokens
+    // Exchange authorization code for tokens
     const tokenRes = await axios.post("https://oauth2.googleapis.com/token", null, {
       params: {
         client_id: process.env.GOOGLE_CLIENT_ID,
@@ -181,53 +188,32 @@ export const googleCallback = async (req, res, next) => {
     const avatarUrl = userInfo.picture || null;
     const googleId = userInfo.sub || null;
 
-    // Check if user exists
+    // Check if user exists or create new one
     const { data: existingUser } = await supabaseAdmin
       .from("users")
       .select("*")
       .eq("email", email)
       .maybeSingle();
 
-    let dbUser;
+    let dbUser = existingUser;
 
     if (!existingUser) {
-      // New user signup flow
       const payload = {
         email,
         full_name: fullName,
         password: null,
-        role,  // from OAuth state
+        role,
         google_id: googleId,
         avatar_url: avatarUrl,
       };
 
-      const { data: newUser, error: insertError } = await supabaseAdmin
+      const { data: newUser, error } = await supabaseAdmin
         .from("users")
         .insert([payload])
         .select()
         .single();
-
-      if (insertError) throw insertError;
+      if (error) throw error;
       dbUser = newUser;
-    } else {
-      // Existing user login flow: update if needed
-      const updates = {};
-
-      if (avatarUrl && existingUser.avatar_url !== avatarUrl) updates.avatar_url = avatarUrl;
-      if (googleId && existingUser.google_id !== googleId) updates.google_id = googleId;
-
-      if (Object.keys(updates).length > 0) {
-        const { data: updatedUser, error: updateError } = await supabaseAdmin
-          .from("users")
-          .update(updates)
-          .eq("id", existingUser.id)
-          .select()
-          .single();
-        if (updateError) throw updateError;
-        dbUser = updatedUser;
-      } else {
-        dbUser = existingUser;
-      }
     }
 
     // Create JWT token
@@ -237,18 +223,25 @@ export const googleCallback = async (req, res, next) => {
       { expiresIn: "1h" }
     );
 
-    // Decide redirect based on role and intent
-    let redirectUrl = "/";
-
-    if (dbUser.role === "business") {
-      redirectUrl = intent === "signup" ? "/business/onboarding" : "/business/dashboard";
-    } else if (dbUser.role === "admin") {
-      redirectUrl = "/admin/dashboard";
+    // Redirect logic
+    if (platform === "web") {
+      res.cookie("token", token, COOKIE_OPTIONS);
+      let redirectUrl = "/";
+      if (dbUser.role === "business") {
+        redirectUrl = intent === "signup" ? "/business/onboarding" : "/business/dashboard";
+      } else if (dbUser.role === "admin") {
+        redirectUrl = "/admin/dashboard";
+      }
+      return res.redirect(`${process.env.NEXT_PUBLIC_API_URL}${redirectUrl}`);
     }
 
-    // Set cookie and redirect
-    res.cookie("token", token, COOKIE_OPTIONS);
-    return res.redirect(`${process.env.NEXT_PUBLIC_API_URL}${redirectUrl}`);
+    if (platform === "mobile" && mobileRedirectUri) {
+      // Redirect to the mobile deep link with token
+      return res.redirect(`${mobileRedirectUri}?token=${token}`);
+    }
+
+    // fallback JSON response
+    return res.status(200).json({ token, user: dbUser });
 
   } catch (err) {
     console.error("Google OAuth error:", err.response?.data || err.message);
