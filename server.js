@@ -20,6 +20,7 @@ import webhookRoute from './controllers/stripeWebhook.js';
 import stripeRoutes from './routes/stripe.js';
 import amenitiesRouter from './routes/amenities.js';
 import searchRoutes from './routes/search.js';
+import appAuthMiddleware from './middlewares/appAuthMiddleware.js'
 
 dotenv.config();
 const app = express();
@@ -42,6 +43,9 @@ app.use('/api/search', searchRoutes);
 
 app.use('/customer', customerRoutes);
 app.use('/plans', planRoutes); 
+app.get("/api/auth/me", appAuthMiddleware, (req, res) => {
+  res.json({ user: req.user });
+});
 
 app.use('/stripe', webhookRoute);
 app.use('/api/bookings', bookingRoutes);

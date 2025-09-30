@@ -52,6 +52,80 @@ router.get('/places', async (req, res) => {
   res.json({ data: places });
 });
 
+// GET /api/services?lat_min=18.5&lat_max=18.7&lng_min=73.85&lng_max=74.05
+router.get('/servicesapp', async (req, res) => {
+  try {
+    const { lat_min, lat_max, lng_min, lng_max } = req.query;
+
+    let query = supabase
+      .from('services')
+      .select(`
+        id, label, icon_url,
+        subcategories:service_categories (
+          id, label,
+          details:details (
+            id, name, rating, location, status, timings, contact, website, tags,
+            latitude, longitude,
+            service_category:service_categories ( icon_url )
+          )
+        )
+      `);
+
+    // ✅ Only filter if bounds are provided
+    if (lat_min && lat_max && lng_min && lng_max) {
+      query = query.contains('subcategories.details', [
+        {
+          latitude: { gte: Number(lat_min), lte: Number(lat_max) },
+          longitude: { gte: Number(lng_min), lte: Number(lng_max) }
+        }
+      ]);
+    }
+
+    const { data: services, error } = await query;
+    if (error) {
+      console.error("🔥 Supabase error:", error.message);
+      return res.status(500).json({ error: error.message });
+    }
+
+    res.json({ data: services });
+  } catch (err) {
+    console.error("🔥 Express error:", err.message);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+router.get('/placesapp', async (req, res) => {
+  const { lat_min, lat_max, lng_min, lng_max } = req.query;
+
+  let query = supabase
+    .from('places')
+    .select(`
+      id, label, icon_url,
+      subcategories:place_categories (
+        id, label,
+        details:details (
+          id, name, rating, location, status, timings, contact, website, tags,
+          latitude, longitude,
+          place_category:place_categories ( icon_url )
+        )
+      )
+    `);
+
+  if (lat_min && lat_max && lng_min && lng_max) {
+    query = query.contains('subcategories.details', [
+      {
+        latitude: { gte: Number(lat_min), lte: Number(lat_max) },
+        longitude: { gte: Number(lng_min), lte: Number(lng_max) }
+      }
+    ]);
+  }
+
+  const { data: places, error } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+
+  res.json({ data: places });
+});
+
 
 // ✅ GET /api/business-services?businessId=xyz - Services for a specific business
 router.get('/business-services', async (req, res) => {
@@ -65,7 +139,7 @@ router.get('/business-services', async (req, res) => {
     const { data, error } = await supabase
       .from('details')
       .select('*')
-      .eq('business_id', businessId); // Assuming your 'details' table has business_id
+      .eq('business_id', businessId); 
 
     if (error) return res.status(500).json({ error: error.message });
 
@@ -75,7 +149,7 @@ router.get('/business-services', async (req, res) => {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
-// GET /api/booking-options/:detailId
+
 // GET /api/details/:id/booking-options
 router.get('/details/:id/booking-options', async (req, res) => {
   const { id } = req.params;
@@ -99,7 +173,45 @@ router.get('/details/:id/booking-options', async (req, res) => {
     return res.status(500).json({ error: 'Internal Server Error' });
   }
 });
+// GET /api/booking-options/:detailId
+router.get('/details/by-id', async (req, res) => {
+  const ids = req.query.ids;
 
+  if (!ids) {
+    return res.status(400).json({ error: 'Missing ids query param.' });
+  }
+
+  const idArray = ids.split(',');
+
+  const { data: details, error } = await supabase
+    .from('details')
+    .select(
+      `
+      *,
+      bookings(id, note, price, booking_time),
+      service_category:service_categories!details_service_category_id_fkey(icon_url),
+      place_category:place_categories!details_place_category_id_fkey(icon_url),
+      detail_amenities (
+        amenities (
+          id,
+          name,
+          icon_url
+        )
+      )
+    `
+    )
+    .in('id', idArray);
+
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+  if (!details || details.length === 0) {
+    return res.status(404).json({ error: 'Detail not found.' });
+  }
+
+  res.status(200).json(details);
+});
 
 
 router.get('/details/:type', async (req, res) => {
@@ -145,47 +257,8 @@ router.get('/details/:type', async (req, res) => {
 });
 // In your Express router
 
-router.get('/details/by-id', async (req, res) => {
-  const ids = req.query.ids;
-
-  if (!ids) {
-    return res.status(400).json({ error: 'Missing ids query param.' });
-  }
-
-  const idArray = ids.split(',');
-
-  const { data: details, error } = await supabase
-    .from('details')
-    .select(
-      `
-      *,
-      bookings(id, note, price, booking_time),
-      service_category:service_categories!details_service_category_id_fkey(icon_url),
-      place_category:place_categories!details_place_category_id_fkey(icon_url),
-      detail_amenities (
-        amenities (
-          id,
-          name,
-          icon_url
-        )
-      )
-    `
-    )
-    .in('id', idArray);
-
-  if (error) {
-    return res.status(500).json({ error: error.message });
-  }
-
-  if (!details || details.length === 0) {
-    return res.status(404).json({ error: 'Detail not found.' });
-  }
-
-  res.status(200).json(details);
-});
 
 
-// Add this route somewhere before export default router;
 
 router.get('/subcategories', async (req, res) => {
   const idsQuery = req.query.ids;
