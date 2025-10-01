@@ -21,6 +21,7 @@ import stripeRoutes from './routes/stripe.js';
 import amenitiesRouter from './routes/amenities.js';
 import searchRoutes from './routes/search.js';
 import appAuthMiddleware from './middlewares/appAuthMiddleware.js'
+import service from './routes/serivice.js'
 
 dotenv.config();
 const app = express();
@@ -53,6 +54,7 @@ app.use('/pay', paymentRoutes);
 app.use('/stripe', stripeRoutes);
 // app.js or index.js
 app.use('/api/amenities', amenitiesRouter);
+app.use('/api/services', service);
 
 
 app.use(errorHandler);

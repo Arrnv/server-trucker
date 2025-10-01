@@ -52,79 +52,146 @@ router.get('/places', async (req, res) => {
   res.json({ data: places });
 });
 
-// GET /api/services?lat_min=18.5&lat_max=18.7&lng_min=73.85&lng_max=74.05
-router.get('/servicesapp', async (req, res) => {
+// ---------------- SERVICES ----------------
+
+router.get("/categories", async (req, res) => {
   try {
-    const { lat_min, lat_max, lng_min, lng_max } = req.query;
+    const { type = "service" } = req.query; // service or place
+    const tableName = type === "service" ? "service_categories" : "place_categories";
+
+    const { data, error } = await supabase
+      .from(tableName)
+      .select("id, label, icon_url");
+
+    if (error) throw error;
+
+    res.json({ data });
+  } catch (err) {
+    console.error("🔥 categories error:", err.message);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+router.get("/servicesapp", async (req, res) => {
+  try {
+    const { category_id, lat_min, lat_max, lng_min, lng_max, limit = 20, offset = 0 } = req.query;
 
     let query = supabase
-      .from('services')
+      .from("details")
       .select(`
-        id, label, icon_url,
-        subcategories:service_categories (
-          id, label,
-          details:details (
-            id, name, rating, location, status, timings, contact, website, tags,
-            latitude, longitude,
-            service_category:service_categories ( icon_url )
-          )
+        id,
+        name,
+        rating,
+        location,
+        latitude,
+        longitude,
+        service_category:service_categories (
+          label,
+          icon_url,
+          service:services ( label )
         )
-      `);
+      `)
+      .range(Number(offset), Number(offset) + Number(limit) - 1);
 
-    // ✅ Only filter if bounds are provided
+    // Filter by category_id if provided
+    if (category_id) query = query.eq("service_category_id", category_id);
+
+    // Filter by bounding box if provided
     if (lat_min && lat_max && lng_min && lng_max) {
-      query = query.contains('subcategories.details', [
-        {
-          latitude: { gte: Number(lat_min), lte: Number(lat_max) },
-          longitude: { gte: Number(lng_min), lte: Number(lng_max) }
-        }
-      ]);
+      query = query
+        .gte("latitude", Number(lat_min))
+        .lte("latitude", Number(lat_max))
+        .gte("longitude", Number(lng_min))
+        .lte("longitude", Number(lng_max));
     }
 
-    const { data: services, error } = await query;
-    if (error) {
-      console.error("🔥 Supabase error:", error.message);
-      return res.status(500).json({ error: error.message });
-    }
+    const { data, error } = await query;
+    if (error) throw error;
 
-    res.json({ data: services });
+    const flatData = data.map(d => ({
+      id: d.id,
+      name: d.name,
+      category: d.service_category?.service?.label,
+      subcategory: d.service_category?.label,
+      address: d.location,
+      latitude: d.latitude,
+      longitude: d.longitude,
+      icon: d.service_category?.icon_url || null,
+      type: "service",
+      rating: d.rating ?? null,
+    }));
+
+    res.json({ data: flatData });
   } catch (err) {
-    console.error("🔥 Express error:", err.message);
-    res.status(500).json({ error: 'Internal Server Error' });
+    console.error("🔥 servicesapp error:", err.message);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
-router.get('/placesapp', async (req, res) => {
-  const { lat_min, lat_max, lng_min, lng_max } = req.query;
 
-  let query = supabase
-    .from('places')
-    .select(`
-      id, label, icon_url,
-      subcategories:place_categories (
-        id, label,
-        details:details (
-          id, name, rating, location, status, timings, contact, website, tags,
-          latitude, longitude,
-          place_category:place_categories ( icon_url )
+
+
+// ---------------- PLACES ----------------
+// GET /api/placesapp
+router.get("/placesapp", async (req, res) => {
+  try {
+    const { category_id, lat_min, lat_max, lng_min, lng_max, limit = 20, offset = 0 } = req.query;
+
+    let query = supabase
+      .from("details")
+      .select(`
+        id,
+        name,
+        rating,
+        location,
+        latitude,
+        longitude,
+        place_category:place_categories (
+          label,
+          icon_url,
+          place:places ( label )
         )
-      )
-    `);
+      `)
+      .range(Number(offset), Number(offset) + Number(limit) - 1);
 
-  if (lat_min && lat_max && lng_min && lng_max) {
-    query = query.contains('subcategories.details', [
-      {
-        latitude: { gte: Number(lat_min), lte: Number(lat_max) },
-        longitude: { gte: Number(lng_min), lte: Number(lng_max) }
-      }
-    ]);
+    // Filter by category_id if provided
+    if (category_id) query = query.eq("place_category_id", category_id);
+
+    // Filter by bounding box if provided
+    if (lat_min && lat_max && lng_min && lng_max) {
+      query = query
+        .gte("latitude", Number(lat_min))
+        .lte("latitude", Number(lat_max))
+        .gte("longitude", Number(lng_min))
+        .lte("longitude", Number(lng_max));
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const flatData = data.map(d => ({
+      id: d.id,
+      name: d.name,
+      category: d.place_category?.place?.label,
+      subcategory: d.place_category?.label,
+      address: d.location,
+      latitude: d.latitude,
+      longitude: d.longitude,
+      icon: d.place_category?.icon_url || null,
+      type: "place",
+      rating: d.rating ?? null,
+    }));
+
+    res.json({ data: flatData });
+  } catch (err) {
+    console.error("🔥 placesapp error:", err.message);
+    res.status(500).json({ error: "Internal Server Error" });
   }
-
-  const { data: places, error } = await query;
-  if (error) return res.status(500).json({ error: error.message });
-
-  res.json({ data: places });
 });
+
+
+
+
 
 
 // ✅ GET /api/business-services?businessId=xyz - Services for a specific business
@@ -149,6 +216,33 @@ router.get('/business-services', async (req, res) => {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
+
+// GET /place-categories
+router.get("/place-categories", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("place_categories")
+      .select("id, label, icon_url")
+      .order("label", { ascending: true });
+
+    if (error) throw error;
+
+    
+    res.json({
+      data: data.map((cat) => ({
+        id: cat.id,
+        label: cat.label,
+        icon_url: cat.icon_url,
+        type: "place",
+      })),
+    });
+  } catch (err) {
+    console.error("🔥 place categories error:", err.message);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+
 
 // GET /api/details/:id/booking-options
 router.get('/details/:id/booking-options', async (req, res) => {
