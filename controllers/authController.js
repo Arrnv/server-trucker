@@ -28,14 +28,20 @@ export const signup = async (req, res, next) => {
   if (!email || !password || !fullName) return res.status(400).json({ message: 'All fields required' });
 
   try {
-    const { data: existingUser } = await supabase
-      .from('users')
-      .select('*')
-      .eq('email', email)
-      .single()
-      .catch(() => ({ data: null }));
+const { data: existingUser, error: existingError } = await supabase
+  .from('users')
+  .select('*')
+  .eq('email', email)
+  .single();
 
-    if (existingUser) return res.status(400).json({ message: 'User already exists' });
+if (existingError && existingError.code !== 'PGRST116') { 
+  // "PGRST116" = no rows found
+  throw existingError;
+}
+
+if (existingUser) {
+  return res.status(400).json({ message: 'User already exists' });
+}
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
