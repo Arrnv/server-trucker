@@ -53,19 +53,50 @@ router.get('/places', async (req, res) => {
 });
 
 // ---------------- SERVICES ----------------
+// Get top-level services or places
+router.get("/roots", async (req, res) => {
+  try {
+    const { type } = req.query;
 
+    if (type === "service") {
+      const { data, error } = await supabase.from("services").select("id, label, icon_url");
+      if (error) throw error;
+      return res.json({ data });
+    } else if (type === "place") {
+      const { data, error } = await supabase.from("places").select("id, label, icon_url");
+      if (error) throw error;
+      return res.json({ data });
+    }
+
+    res.status(400).json({ error: "Invalid type" });
+  } catch (err) {
+    console.error("🔥 roots error:", err.message);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Get categories for a given service or place
 router.get("/categories", async (req, res) => {
   try {
-    const { type = "service" } = req.query; // service or place
-    const tableName = type === "service" ? "service_categories" : "place_categories";
+    const { type, root_id } = req.query;
 
-    const { data, error } = await supabase
-      .from(tableName)
-      .select("id, label, icon_url");
+    if (type === "service") {
+      const { data, error } = await supabase
+        .from("service_categories")
+        .select("id, label, icon_url")
+        .eq("service_id", root_id);
+      if (error) throw error;
+      return res.json({ data });
+    } else if (type === "place") {
+      const { data, error } = await supabase
+        .from("place_categories")
+        .select("id, label, icon_url")
+        .eq("place_id", root_id);
+      if (error) throw error;
+      return res.json({ data });
+    }
 
-    if (error) throw error;
-
-    res.json({ data });
+    res.status(400).json({ error: "Invalid type" });
   } catch (err) {
     console.error("🔥 categories error:", err.message);
     res.status(500).json({ error: "Internal Server Error" });
@@ -93,10 +124,28 @@ router.get("/servicesapp", async (req, res) => {
       `)
       .range(Number(offset), Number(offset) + Number(limit) - 1);
 
-    // Filter by category_id if provided
-    if (category_id) query = query.eq("service_category_id", category_id);
+    // --- START: NEW MULTI-CATEGORY FILTER LOGIC (Pure JS) ---
+    if (category_id) {
+        let categoryIdsArray = [];
 
-    // Filter by bounding box if provided
+        if (Array.isArray(category_id)) {
+            // Case 1: Framework parsed into an array (e.g., ?category_id[]=id1&category_id[]=id2)
+            categoryIdsArray = category_id;
+        } else if (typeof category_id === 'string' && category_id.includes(',')) {
+            // Case 2: Framework joined multiple category_id params into a comma-separated string
+            categoryIdsArray = category_id.split(',').filter(id => id.trim() !== '');
+        } else {
+            // Case 3: Single category ID passed as a string
+            categoryIdsArray = [category_id];
+        }
+        
+        // Use the 'in' filter for multiple values
+        if (categoryIdsArray.length > 0) {
+            query = query.in("service_category_id", categoryIdsArray);
+        }
+    }
+    // --- END: NEW MULTI-CATEGORY FILTER LOGIC ---
+    
     if (lat_min && lat_max && lng_min && lng_max) {
       query = query
         .gte("latitude", Number(lat_min))
@@ -128,11 +177,9 @@ router.get("/servicesapp", async (req, res) => {
   }
 });
 
-
-
-
-// ---------------- PLACES ----------------
-// GET /api/placesapp
+/**
+ * GET /api/placesapp (MODIFIED - Pure JS logic for category_id parsing)
+ */
 router.get("/placesapp", async (req, res) => {
   try {
     const { category_id, lat_min, lat_max, lng_min, lng_max, limit = 20, offset = 0 } = req.query;
@@ -154,10 +201,25 @@ router.get("/placesapp", async (req, res) => {
       `)
       .range(Number(offset), Number(offset) + Number(limit) - 1);
 
-    // Filter by category_id if provided
-    if (category_id) query = query.eq("place_category_id", category_id);
+    // --- START: NEW MULTI-CATEGORY FILTER LOGIC (Pure JS) ---
+    if (category_id) {
+        let categoryIdsArray = [];
 
-    // Filter by bounding box if provided
+        if (Array.isArray(category_id)) {
+            categoryIdsArray = category_id;
+        } else if (typeof category_id === 'string' && category_id.includes(',')) {
+            categoryIdsArray = category_id.split(',').filter(id => id.trim() !== '');
+        } else {
+            categoryIdsArray = [category_id];
+        }
+        
+        // Use the 'in' filter for multiple values
+        if (categoryIdsArray.length > 0) {
+            query = query.in("place_category_id", categoryIdsArray);
+        }
+    }
+    // --- END: NEW MULTI-CATEGORY FILTER LOGIC ---
+
     if (lat_min && lat_max && lng_min && lng_max) {
       query = query
         .gte("latitude", Number(lat_min))
@@ -188,8 +250,6 @@ router.get("/placesapp", async (req, res) => {
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
-
-
 
 
 
