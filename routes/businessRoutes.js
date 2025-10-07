@@ -1,7 +1,9 @@
 import express from 'express';
 import authenticateToken from '../middlewares/authMiddleware.js';
+import appAuthMiddleware from "../middlewares/appAuthMiddleware.js"
 import {
   onboardBusiness,
+  onboardBusiness1,
   getMyBusiness,
   getServiceById,
   updateService,
@@ -14,7 +16,8 @@ import {  upload } from '../controllers/businessController.js';
 import supabase from '../utils/supabaseClient.js';
 
 const router = express.Router();
-
+router.post('/onboardapp', appAuthMiddleware, upload.single('logo'), onboardBusiness1);
+router.get('/myapp', appAuthMiddleware, getMyBusiness);
 
 
 router.post('/onboard', authenticateToken, upload.single('logo'), onboardBusiness);
@@ -30,6 +33,15 @@ router.post('/add-detail',
   ]),
   addDetailForBusiness
 );router.get('/alerts/:id', authenticateToken, getAlertsForService);
+router.post('/add-detailapp',
+  appAuthMiddleware,
+  upload.fields([
+    { name: 'galleryFiles' },
+    { name: 'videoFile', maxCount: 1 }
+  ]),
+  addDetailForBusiness
+);router.get('/alerts/:id', appAuthMiddleware, getAlertsForService);
+
 router.get('/feedbacks/:detailId', getTodayFeedbacks);
 
 

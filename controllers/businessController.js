@@ -8,6 +8,105 @@ import path from 'path';
 const storage = multer.memoryStorage();
 export const upload = multer({ storage });
 
+// routes/business.js
+
+export const onboardBusiness1 = async (req, res) => {
+  try {
+    if (!req.body) {
+      return res.status(400).json({ message: "Missing form data" });
+    }
+
+    const { name = "", plan_id = "" } = req.body;
+
+    if (!name || !plan_id) {
+      return res.status(400).json({ message: "Required fields are missing" });
+    }
+
+    const owner_email = req.user?.email;
+    if (!owner_email) {
+      return res.status(401).json({ message: "Unauthorized: Missing user email" });
+    }
+
+    const logoFile = req.file;
+
+    console.log("Form data received:", { name, plan_id, hasFile: !!logoFile });
+
+    // 1. Check if business already exists
+    const { data: existing } = await supabase
+      .from("businesses")
+      .select("*")
+      .eq("owner_email", owner_email)
+      .maybeSingle();
+
+    if (existing) {
+      return res.status(400).json({ message: "Business already onboarded" });
+    }
+
+    // 2. Upload logo if provided
+    let logo_url = null;
+    if (logoFile) {
+      const fileExt = path.extname(logoFile.originalname);
+      const fileName = `logos/${uuidv4()}${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("business-logos")
+        .upload(fileName, logoFile.buffer, {
+          contentType: logoFile.mimetype,
+        });
+
+      if (uploadError) throw new Error(`Upload error: ${uploadError.message}`);
+
+      const { data: publicURLData } = supabase.storage
+        .from("business-logos")
+        .getPublicUrl(fileName);
+
+      logo_url = publicURLData.publicUrl;
+    }
+
+    // 3. Insert new business
+    const { data: business, error: businessErr } = await supabase
+      .from("businesses")
+      .insert([{ name, owner_email, logo_url }])
+      .select()
+      .single();
+
+    if (businessErr) throw new Error(`Insert error: ${businessErr.message}`);
+
+    // 4. Create subscription
+    const { error: subErr } = await supabase
+      .from("business_subscriptions")
+      .insert([{
+        business_id: business.id,
+        plan_id,
+        started_at: new Date().toISOString(),
+        expires_at: null,
+        is_active: true,
+      }]);
+
+    if (subErr) throw new Error(`Subscription error: ${subErr.message}`);
+
+    // 5. Update user role to business
+    const { error: roleErr, data: updatedUser } = await supabase
+      .from("users")
+      .update({ role: "business" })
+      .eq("email", owner_email)
+      .select()
+      .single();
+
+    if (roleErr) throw new Error(`Role update error: ${roleErr.message}`);
+
+    return res.status(201).json({
+      message: "Business onboarded",
+      business,
+      user: updatedUser,
+    });
+  } catch (err) {
+    console.error("Onboarding Error:", err.message);
+    return res.status(500).json({ message: "Internal Server Error", error: err.message });
+  }
+};
+
+
 export const onboardBusiness = async (req, res) => {
   try {
     if (!req.body) {

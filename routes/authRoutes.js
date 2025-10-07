@@ -1,5 +1,5 @@
 import express from 'express';
-import { signup, login, getProfile,logout } from '../controllers/authController.js';
+import { signup, login, getProfile,logout,appSignup, appLogin } from '../controllers/authController.js';
 import authenticate from '../middlewares/authMiddleware.js';
 // authRoutes.js
 import { startGoogleLogin, googleCallback} from '../controllers/authController.js';
@@ -13,4 +13,6 @@ router.post('/login', login);
 router.post('/logout', logout);
 router.get('/profile', authenticate, getProfile);
 router.get('/profileapp', appAuthMiddleware, getProfile);
+router.post('/signupapp', appSignup);
+router.post('/loginapp', appLogin);
 export default router;

@@ -255,3 +255,76 @@ export const googleCallback = async (req, res, next) => {
   }
 };
 
+
+
+
+
+
+export const appSignup = async (req, res, next) => {
+  const { email, password, fullName, role } = req.body;
+  if (!email || !password || !fullName) 
+    return res.status(400).json({ message: 'All fields required' });
+
+  try {
+    const { data: existingUser, error: existingError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .single();
+
+    if (existingError && existingError.code !== 'PGRST116') throw existingError;
+    if (existingUser) return res.status(400).json({ message: 'User already exists' });
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const { data: newUser, error: insertError } = await supabase
+      .from('users')
+      .insert([{ email, full_name: fullName, password: hashedPassword, role }])
+      .select()
+      .single();
+
+    if (insertError) throw insertError;
+
+    const token = jwt.sign(
+      { id: newUser.id, email: newUser.email, fullName: newUser.full_name, role: newUser.role },
+      JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    // Return JWT and user info directly
+    res.json({ token, user: { id: newUser.id, email: newUser.email, fullName: newUser.full_name, role: newUser.role } });
+  } catch (err) {
+    console.error('App signup error:', err);
+    next(err);
+  }
+};
+
+export const appLogin = async (req, res, next) => {
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ message: 'Email and password required' });
+
+  try {
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .single();
+
+    if (error || !user) return res.status(401).json({ message: 'Invalid credentials' });
+    if (!user.password) return res.status(401).json({ message: 'Use Google sign-in for this account' });
+
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) return res.status(401).json({ message: 'Invalid credentials' });
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email, fullName: user.full_name, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    // Return JWT and user info
+    res.json({ token, user: { id: user.id, email: user.email, fullName: user.full_name, role: user.role } });
+  } catch (err) {
+    console.error('App login error:', err);
+    next(err);
+  }
+};
