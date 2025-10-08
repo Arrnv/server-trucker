@@ -68,7 +68,6 @@ if (existingUser) {
   }
 };
 
-// ----------------- login (email/password) -----------------
 export const login = async (req, res, next) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ message: 'Email and password required' });
@@ -255,11 +254,149 @@ export const googleCallback = async (req, res, next) => {
   }
 };
 
+export const startAppleLogin = async (req, res) => {
+  const role = req.query.role || "visitor";
+  const intent = req.query.intent || "login";
+  const platform = req.query.platform || "web";
+  const mobileRedirectUri = req.query.redirect_uri || null;
 
+  const state = encodeURIComponent(
+    JSON.stringify({ role, intent, platform, mobileRedirectUri })
+  );
 
+  const redirectUri = `${process.env.BACKEND_URL}/api/auth/apple/callback`;
 
+  const params = {
+    response_type: "code",
+    response_mode: "form_post",
+    client_id: process.env.APPLE_CLIENT_ID, // e.g. com.pathsure.APP
+    redirect_uri: redirectUri,
+    scope: "name email",
+    state,
+  };
 
+  const authUrl = `https://appleid.apple.com/auth/authorize?${querystring.stringify(params)}`;
+  return res.redirect(authUrl);
+};
 
+// --- APPLE CALLBACK ---
+export const appleCallback = async (req, res, next) => {
+  try {
+    const { code, state: stateParam } = req.body;
+    if (!code) return res.status(400).json({ message: "Missing code" });
+
+    let role = "visitor";
+    let intent = "login";
+    let platform = "web";
+    let mobileRedirectUri = null;
+
+    if (stateParam) {
+      try {
+        const parsed = JSON.parse(decodeURIComponent(stateParam));
+        role = parsed.role || role;
+        intent = parsed.intent || intent;
+        platform = parsed.platform || platform;
+        mobileRedirectUri = parsed.mobileRedirectUri || null;
+      } catch (e) {
+        console.warn("Failed to parse OAuth state:", e.message);
+      }
+    }
+
+    // --- Generate client_secret (JWT) dynamically ---
+    const clientSecret = jwt.sign(
+      {
+        iss: process.env.APPLE_TEAM_ID,      // Your Apple Developer Team ID
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 180 * 24 * 60 * 60, // ~6 months
+        aud: "https://appleid.apple.com",
+        sub: process.env.APPLE_CLIENT_ID,
+      },
+      process.env.APPLE_PRIVATE_KEY.replace(/\\n/g, "\n"), // private key from .p8 file
+      {
+        algorithm: "ES256",
+        keyid: process.env.APPLE_KEY_ID, // Your Key ID from Apple Dev portal
+      }
+    );
+
+    // --- Exchange code for token ---
+    const tokenRes = await axios.post(
+      "https://appleid.apple.com/auth/token",
+      querystring.stringify({
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: `${process.env.BACKEND_URL}/api/auth/apple/callback`,
+        client_id: process.env.APPLE_CLIENT_ID,
+        client_secret: clientSecret,
+      }),
+      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+    );
+
+    const { id_token } = tokenRes.data;
+    const appleUser = JSON.parse(Buffer.from(id_token.split(".")[1], "base64").toString());
+
+    const email = appleUser.email || null;
+    const fullName = `${appleUser.name?.firstName || ""} ${appleUser.name?.lastName || ""}`.trim() || "Apple User";
+    const appleId = appleUser.sub;
+
+    // --- Check if user exists or create ---
+    const { data: existingUser } = await supabaseAdmin
+      .from("users")
+      .select("*")
+      .eq("apple_id", appleId)
+      .maybeSingle();
+
+    let dbUser = existingUser;
+
+    if (!existingUser) {
+      // Try match by email if exists
+      const { data: existingByEmail } = await supabaseAdmin
+        .from("users")
+        .select("*")
+        .eq("email", email)
+        .maybeSingle();
+
+      if (existingByEmail) {
+        await supabaseAdmin
+          .from("users")
+          .update({ apple_id: appleId })
+          .eq("id", existingByEmail.id);
+        dbUser = { ...existingByEmail, apple_id: appleId };
+      } else {
+        const { data: newUser, error } = await supabaseAdmin
+          .from("users")
+          .insert([
+            { email, full_name: fullName, apple_id: appleId, role },
+          ])
+          .select()
+          .single();
+
+        if (error) throw error;
+        dbUser = newUser;
+      }
+    }
+
+    // --- Create JWT token for app ---
+    const token = jwt.sign(
+      { id: dbUser.id, email: dbUser.email, fullName: dbUser.full_name, role: dbUser.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "1h" }
+    );
+
+    if (platform === "web") {
+      res.cookie("token", token, { httpOnly: true, secure: true });
+      return res.redirect(`${process.env.NEXT_PUBLIC_API_URL}/`);
+    }
+
+    if (platform === "mobile" && mobileRedirectUri) {
+      return res.redirect(`${mobileRedirectUri}?token=${token}`);
+    }
+
+    return res.status(200).json({ token, user: dbUser });
+  } catch (err) {
+    console.error("Apple OAuth error:", err.response?.data || err.message);
+    next(err);
+  }
+};
 export const appSignup = async (req, res, next) => {
   const { email, password, fullName, role } = req.body;
   if (!email || !password || !fullName) 

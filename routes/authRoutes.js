@@ -1,5 +1,5 @@
 import express from 'express';
-import { signup, login, getProfile,logout,appSignup, appLogin } from '../controllers/authController.js';
+import { signup, login, getProfile,logout,appSignup, appLogin,startAppleLogin, appleCallback } from '../controllers/authController.js';
 import authenticate from '../middlewares/authMiddleware.js';
 // authRoutes.js
 import { startGoogleLogin, googleCallback} from '../controllers/authController.js';
@@ -8,6 +8,10 @@ const router = express.Router();
 
 router.get('/google', startGoogleLogin);
 router.get('/google/callback', googleCallback);
+
+router.get('/apple', startAppleLogin);
+router.get('/apple/callback', appleCallback);
+
 router.post('/signup', signup);
 router.post('/login', login);
 router.post('/logout', logout);

@@ -65,3 +65,28 @@ app.use(errorHandler);
 app.listen(port, '0.0.0.0',() => {
   console.log(`Server running on port ${port}`);
 });
+// import jwt from "jsonwebtoken";
+// import fs from "fs";
+
+// const privateKey = fs.readFileSync("./AuthKey_NJXX4SKRJL.p8");
+
+// const token = jwt.sign(
+//   {
+//     iss: "HAK23MQ4FD", // e.g. AB123CD456
+//     iat: Math.floor(Date.now() / 1000),
+//     exp: Math.floor(Date.now() / 1000) + 15777000, // 6 months
+//     aud: "https://appleid.apple.com",
+//     sub: "com.pathsure.APP", // your Service ID
+//   },
+//   privateKey,
+//   {
+//     algorithm: "ES256",
+//     header: {
+//       kid: "NJXX4SKRJL", // e.g. XYZ987ABC
+//     },
+//   }
+// );
+
+
+// console.log("Generated Apple Secret JWT:");
+// console.log(token);
