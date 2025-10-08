@@ -177,6 +177,80 @@ router.get("/servicesapp", async (req, res) => {
   }
 });
 
+router.delete('/users/:id', async (req, res) => {
+  const userId = req.params.id;
+
+  try {
+    // 1️⃣ Fetch user
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('email')
+      .eq('id', userId)
+      .single();
+
+    if (userError || !user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const userEmail = user.email;
+
+    // 2️⃣ Fetch user's business (if any)
+    const { data: businesses, error: businessError } = await supabase
+      .from('businesses')
+      .select('id')
+      .eq('owner_email', userEmail);
+
+    if (businessError) throw businessError;
+
+    const businessId = businesses?.[0]?.id;
+
+    if (businessId) {
+      // 3️⃣ Fetch details of the business
+      const { data: details, error: detailsError } = await supabase
+        .from('details')
+        .select('id')
+        .eq('business_id', businessId);
+
+      if (detailsError) throw detailsError;
+
+      const detailIds = details.map(d => d.id);
+
+      if (detailIds.length > 0) {
+        // 4️⃣ Delete all related child data for all details in batch
+        await supabase.from('service_dashboard_alerts').delete().in('detail_id', detailIds);
+        await supabase.from('service_bookings').delete().in('detail_id', detailIds);
+        await supabase.from('feedback').delete().in('detail_id', detailIds);
+        await supabase.from('media_assets').delete().in('detail_id', detailIds);
+        await supabase.from('detail_amenities').delete().in('detail_id', detailIds);
+        await supabase.from('analytics_events').delete().in('detail_id', detailIds);
+      }
+
+      // 5️⃣ Delete details
+      await supabase.from('details').delete().eq('business_id', businessId);
+
+      // 6️⃣ Delete business subscriptions
+      await supabase.from('business_subscriptions').delete().eq('business_id', businessId);
+
+      // 7️⃣ Delete business
+      await supabase.from('businesses').delete().eq('id', businessId);
+    }
+
+    // 8️⃣ Delete user-related bookings, feedback, analytics not tied to business
+    await supabase.from('service_bookings').delete().eq('user_id', userId);
+    await supabase.from('feedback').delete().eq('user_id', userId);
+    await supabase.from('analytics_events').delete().eq('user_id', userId);
+
+    // 9️⃣ Delete the user
+    const { error: deleteUserError } = await supabase.from('users').delete().eq('id', userId);
+    if (deleteUserError) throw deleteUserError;
+
+    res.json({ message: 'User and all related data deleted successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
 /**
  * GET /api/placesapp (MODIFIED - Pure JS logic for category_id parsing)
  */
