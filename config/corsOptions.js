@@ -8,9 +8,11 @@ const allowedOrigins = [
 
 const corsOptions = {
   origin: function (origin, callback) {
+    // Allow null for mobile/native apps
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      console.warn('Blocked CORS request from origin:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
