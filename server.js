@@ -33,7 +33,7 @@ app.use(helmet());
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser()); 
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
 
