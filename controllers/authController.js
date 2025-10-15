@@ -6,20 +6,20 @@ import axios from "axios";
 import supabaseAdmin from '../utils/supabaseAdmin.js';
 dotenv.config();
 
-const COOKIE_OPTIONS = {
-  httpOnly: true,
-  secure: false ,
-  sameSite: 'Lax',
-  maxAge: 60 * 60 * 1000, 
-};
-
-
 // const COOKIE_OPTIONS = {
 //   httpOnly: true,
-//   secure: true, // 
-//   sameSite: 'None', //
-//   maxAge: 60 * 60 * 1000, // 1 hour
+//   secure: false ,
+//   sameSite: 'Lax',
+//   maxAge: 60 * 60 * 1000, 
 // };
+
+
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: true, // 
+  sameSite: 'None', //
+  maxAge: 60 * 60 * 1000, // 1 hour
+};
 const JWT_SECRET = process.env.JWT_SECRET;
 
 // ----------------- signup (email/password) -----------------
@@ -254,6 +254,8 @@ export const googleCallback = async (req, res, next) => {
   }
 };
 
+
+// Start Apple login
 export const startAppleLogin = async (req, res) => {
   const role = req.query.role || "visitor";
   const intent = req.query.intent || "login";
@@ -269,22 +271,25 @@ export const startAppleLogin = async (req, res) => {
   const params = {
     response_type: "code",
     response_mode: "form_post",
-    client_id: process.env.APPLE_CLIENT_ID, // e.g. com.pathsure.APP
+    client_id: process.env.APPLE_CLIENT_ID,
     redirect_uri: redirectUri,
     scope: "name email",
     state,
   };
 
-  const authUrl = `https://appleid.apple.com/auth/authorize?${querystring.stringify(params)}`;
+  const authUrl = `https://appleid.apple.com/auth/authorize?${querystring.stringify(
+    params
+  )}`;
   return res.redirect(authUrl);
 };
 
-// --- APPLE CALLBACK ---
+// Apple callback
 export const appleCallback = async (req, res, next) => {
   try {
-    const { code, state: stateParam } = req.body;
+    const { code, state: stateParam } = req.body; // POST body now works
     if (!code) return res.status(400).json({ message: "Missing code" });
 
+    // parse state
     let role = "visitor";
     let intent = "login";
     let platform = "web";
@@ -302,23 +307,23 @@ export const appleCallback = async (req, res, next) => {
       }
     }
 
-    // --- Generate client_secret (JWT) dynamically ---
+    // Generate Apple client secret dynamically
     const clientSecret = jwt.sign(
       {
-        iss: process.env.APPLE_TEAM_ID,      // Your Apple Developer Team ID
+        iss: process.env.APPLE_TEAM_ID,
         iat: Math.floor(Date.now() / 1000),
-        exp: Math.floor(Date.now() / 1000) + 180 * 24 * 60 * 60, // ~6 months
+        exp: Math.floor(Date.now() / 1000) + 180 * 24 * 60 * 60, // 6 months
         aud: "https://appleid.apple.com",
         sub: process.env.APPLE_CLIENT_ID,
       },
-      process.env.APPLE_PRIVATE_KEY.replace(/\\n/g, "\n"), // private key from .p8 file
+      process.env.APPLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
       {
         algorithm: "ES256",
-        keyid: process.env.APPLE_KEY_ID, // Your Key ID from Apple Dev portal
+        keyid: process.env.APPLE_KEY_ID,
       }
     );
 
-    // --- Exchange code for token ---
+    // Exchange code for tokens
     const tokenRes = await axios.post(
       "https://appleid.apple.com/auth/token",
       querystring.stringify({
@@ -332,13 +337,15 @@ export const appleCallback = async (req, res, next) => {
     );
 
     const { id_token } = tokenRes.data;
-    const appleUser = JSON.parse(Buffer.from(id_token.split(".")[1], "base64").toString());
+    const appleUser = JSON.parse(
+      Buffer.from(id_token.split(".")[1], "base64").toString()
+    );
 
     const email = appleUser.email || null;
     const fullName = `${appleUser.name?.firstName || ""} ${appleUser.name?.lastName || ""}`.trim() || "Apple User";
     const appleId = appleUser.sub;
 
-    // --- Check if user exists or create ---
+    // Check if user exists or create
     const { data: existingUser } = await supabaseAdmin
       .from("users")
       .select("*")
@@ -348,7 +355,6 @@ export const appleCallback = async (req, res, next) => {
     let dbUser = existingUser;
 
     if (!existingUser) {
-      // Try match by email if exists
       const { data: existingByEmail } = await supabaseAdmin
         .from("users")
         .select("*")
@@ -364,24 +370,22 @@ export const appleCallback = async (req, res, next) => {
       } else {
         const { data: newUser, error } = await supabaseAdmin
           .from("users")
-          .insert([
-            { email, full_name: fullName, apple_id: appleId, role },
-          ])
+          .insert([{ email, full_name: fullName, apple_id: appleId, role }])
           .select()
           .single();
-
         if (error) throw error;
         dbUser = newUser;
       }
     }
 
-    // --- Create JWT token for app ---
+    // Create JWT token
     const token = jwt.sign(
       { id: dbUser.id, email: dbUser.email, fullName: dbUser.full_name, role: dbUser.role },
       process.env.JWT_SECRET,
       { expiresIn: "1h" }
     );
 
+    // Redirect based on platform
     if (platform === "web") {
       res.cookie("token", token, { httpOnly: true, secure: true });
       return res.redirect(`${process.env.NEXT_PUBLIC_API_URL}/`);
@@ -397,6 +401,7 @@ export const appleCallback = async (req, res, next) => {
     next(err);
   }
 };
+
 export const appSignup = async (req, res, next) => {
   const { email, password, fullName, role } = req.body;
   if (!email || !password || !fullName) 
