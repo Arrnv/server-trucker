@@ -10,7 +10,7 @@ router.get('/google', startGoogleLogin);
 router.get('/google/callback', googleCallback);
 
 router.get('/apple', startAppleLogin);
-router.get('/apple/callback', appleCallback);
+router.post('/apple/callback', appleCallback);
 
 router.post('/signup', signup);
 router.post('/login', login);
