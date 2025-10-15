@@ -1,6 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
+import bodyParser from "body-parser";
 import cors from 'cors';
 import cookieParser from 'cookie-parser'; 
 import corsOptions from './config/corsOptions.js';
@@ -32,6 +33,8 @@ app.use(helmet());
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser()); 
+app.use(bodyParser.urlencoded({ extended: true }));
+
 
 
 app.use('/api/auth', authRoutes);
