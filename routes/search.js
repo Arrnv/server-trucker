@@ -46,10 +46,22 @@ router.get('/services', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch city-based services' });
   }
 
-  function extractCityFromAddress(address) {
-    const parts = address.split(',');
-    return parts.length >= 2 ? parts[1].trim() : address;
-  }
+function extractCityFromAddress(address) {
+  if (!address) return "";
+
+  const parts = address.split(",").map(p => p.trim());
+
+  // Example parts:
+  // [ "1220 Fox Run Ave #102", "Opelika", "AL 36801", "United States" ]
+
+  if (parts.length < 3) return address;
+
+  const city = parts[1];         // Opelika
+  const stateZip = parts[2];     // AL 36801
+
+  return `${city}, ${stateZip}`;
+}
+
 });
 
 
