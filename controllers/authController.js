@@ -25,48 +25,109 @@ const JWT_SECRET = process.env.JWT_SECRET;
 // ----------------- signup (email/password) -----------------
 export const signup = async (req, res, next) => {
   const { email, password, fullName, role } = req.body;
-  if (!email || !password || !fullName) return res.status(400).json({ message: 'All fields required' });
+  if (!email || !password || !fullName)
+    return res.status(400).json({ message: "All fields required" });
 
   try {
-const { data: existingUser, error: existingError } = await supabase
-  .from('users')
-  .select('*')
-  .eq('email', email)
-  .single();
+    // 1️⃣ Check if user exists
+    const { data: existingUser, error: existingError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", email)
+      .maybeSingle(); // <-- FIX
 
-if (existingError && existingError.code !== 'PGRST116') { 
-  // "PGRST116" = no rows found
-  throw existingError;
-}
+    if (existingError) throw existingError;
 
-if (existingUser) {
-  return res.status(400).json({ message: 'User already exists' });
-}
+    // 2️⃣ If user exists and same role → block
+    if (existingUser && existingUser.role === role) {
+      return res
+        .status(400)
+        .json({ message: "User already exists with this role" });
+    }
 
+    // 3️⃣ If user exists as visitor and wants business → UPGRADE
+    if (existingUser && existingUser.role === "visitor" && role === "business") {
+      const { data: updatedUser, error: updateError } = await supabase
+        .from("users")
+        .update({ role: "business" })
+        .eq("email", email)
+        .select()
+        .single();
+
+      if (updateError) throw updateError;
+
+      // Issue token after upgrade
+      const token = jwt.sign(
+        {
+          id: updatedUser.id,
+          email: updatedUser.email,
+          fullName: updatedUser.full_name,
+          role: updatedUser.role,
+        },
+        JWT_SECRET,
+        { expiresIn: "1h" }
+      );
+
+      res.cookie("token", token, COOKIE_OPTIONS);
+
+      return res.json({
+        user: {
+          id: updatedUser.id,
+          email: updatedUser.email,
+          fullName: updatedUser.full_name,
+          role: updatedUser.role,
+        },
+        message: "Role upgraded to business",
+      });
+    }
+
+    // 4️⃣ If exists but role transition is invalid (ex: business → visitor)
+    if (existingUser) {
+      return res
+        .status(400)
+        .json({ message: "User already exists with a different role" });
+    }
+
+    // 5️⃣ Otherwise → Normal signup
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const { data: newUser, error: insertError } = await supabase
-      .from('users')
-      .insert([{ email, full_name: fullName, password: hashedPassword, role }])
+      .from("users")
+      .insert([
+        { email, full_name: fullName, password: hashedPassword, role: role },
+      ])
       .select()
       .single();
 
     if (insertError) throw insertError;
 
     const token = jwt.sign(
-      { id: newUser.id, email: newUser.email, fullName: newUser.full_name, role: newUser.role },
+      {
+        id: newUser.id,
+        email: newUser.email,
+        fullName: newUser.full_name,
+        role: newUser.role,
+      },
       JWT_SECRET,
-      { expiresIn: '1h' }
+      { expiresIn: "1h" }
     );
 
-    res.cookie('token', token, COOKIE_OPTIONS);
+    res.cookie("token", token, COOKIE_OPTIONS);
 
-    res.json({ user: { id: newUser.id, email: newUser.email, fullName: newUser.full_name, role: newUser.role } });
+    res.json({
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        fullName: newUser.full_name,
+        role: newUser.role,
+      },
+    });
   } catch (err) {
-    console.error('Signup error:', err);
+    console.error("Signup error:", err);
     next(err);
   }
 };
+
 
 export const login = async (req, res, next) => {
   const { email, password } = req.body;
