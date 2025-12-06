@@ -402,44 +402,52 @@ router.get('/details/:id/booking-options', async (req, res) => {
   }
 });
 // GET /api/booking-options/:detailId
-router.get('/details/by-id', async (req, res) => {
-  const ids = req.query.ids;
+// GET /api/detail/:id
+router.get('/detail/:id', async (req, res) => {
+  const { id } = req.params;
 
-  if (!ids) {
-    return res.status(400).json({ error: 'Missing ids query param.' });
-  }
-
-  const idArray = ids.split(',');
-
-  const { data: details, error } = await supabase
-    .from('details')
-    .select(
-      `
-      *,
-      bookings(id, note, price, booking_time),
-      service_category:service_categories!details_service_category_id_fkey(icon_url),
-      place_category:place_categories!details_place_category_id_fkey(icon_url),
-      detail_amenities (
-        amenities (
+  try {
+    const { data: detail, error } = await supabase
+      .from('details')
+      .select(`
+        *,
+        gallery_urls,
+        business:businesses!details_business_id_fkey (
           id,
           name,
-          icon_url
+          logo_url
+        ),
+        bookings(id, note, price, booking_time),
+        service_category:service_categories!details_service_category_id_fkey(icon_url),
+        place_category:place_categories!details_place_category_id_fkey(icon_url),
+        detail_amenities (
+          amenities (
+            id,
+            name,
+            icon_url
+          )
         )
-      )
-    `
-    )
-    .in('id', idArray);
+      `)
+      .eq('id', id)
+      .single();
 
-  if (error) {
-    return res.status(500).json({ error: error.message });
+    if (error) {
+      console.error("🔥 Supabase Fetch Error:", error.message);
+      return res.status(500).json({ error: error.message });
+    }
+
+    // 🔥 LOG COMPLETE RESPONSE
+    console.log("📌 DETAIL DATA:", JSON.stringify(detail, null, 2));
+
+    res.status(200).json(detail);
+
+  } catch (err) {
+    console.error("🔥 detail fetch error:", err.message);
+    res.status(500).json({ error: "Internal Server Error" });
   }
-
-  if (!details || details.length === 0) {
-    return res.status(404).json({ error: 'Detail not found.' });
-  }
-
-  res.status(200).json(details);
 });
+
+
 
 
 router.get('/details/:type', async (req, res) => {
@@ -478,6 +486,8 @@ router.get('/details/:type', async (req, res) => {
       return res.status(404).json({ error: 'No matching details found.' });
 
     res.status(200).json(details);
+    console.log("📌 DETAIL DATA:", JSON.stringify(detail, null, 2));
+
   } catch (err) {
     console.error("🔥 Unexpected error:", err.message);
     res.status(500).json({ error: 'Internal server error' });
@@ -543,19 +553,25 @@ router.get('/business/:id', async (req, res) => {
     // Fetch main detail
     const { data: detail, error: detailErr } = await supabase
       .from('details')
-      .select(`
-        *,
-        service_category:service_categories!details_service_category_id_fkey(icon_url, label),
-        place_category:place_categories!details_place_category_id_fkey(icon_url, label),
-        detail_amenities (
-          amenities (
-            id,
-            name,
-            icon_url
-          )
-        ),
-        bookings(id, note, price, booking_time)
-      `)
+.select(`
+  *,
+  business:business_id (
+    id,
+    name,
+    logo_url
+  ),
+  bookings(id, note, price, booking_time),
+  service_category:service_categories!details_service_category_id_fkey(icon_url),
+  place_category:place_categories!details_place_category_id_fkey(icon_url),
+  detail_amenities (
+    amenities (
+      id,
+      name,
+      icon_url
+    )
+  )
+`)
+
       .eq('id', id)
       .single(); // We expect a single business
 
