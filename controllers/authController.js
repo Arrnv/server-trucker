@@ -218,9 +218,9 @@ export const googleCallback = async (req, res, next) => {
   if (!code) return res.status(400).json({ message: "Missing code" });
 
   try {
-    let role = 'visitor';
-    let intent = 'login';  
-    let platform = 'web';
+    let role = "visitor";
+    let intent = "login";  
+    let platform = "web";
     let mobileRedirectUri = null;
 
     if (stateParam) {
@@ -231,7 +231,7 @@ export const googleCallback = async (req, res, next) => {
         platform = parsedState.platform || platform;
         mobileRedirectUri = parsedState.mobileRedirectUri || null;
       } catch (e) {
-        console.warn('Failed to parse OAuth state param:', e.message);
+        console.warn("Failed to parse OAuth state param:", e.message);
       }
     }
 
@@ -254,15 +254,22 @@ export const googleCallback = async (req, res, next) => {
     const avatarUrl = userInfo.picture || null;
     const googleId = userInfo.sub || null;
 
-    // Check if user exists or create new one
-    const { data: existingUser } = await supabaseAdmin
+    // ----------------------------------------
+    // 1️⃣ Check if user exists
+    // ----------------------------------------
+    const { data: existingUser, error: selectErr } = await supabaseAdmin
       .from("users")
       .select("*")
       .eq("email", email)
       .maybeSingle();
 
+    if (selectErr) throw selectErr;
+
     let dbUser = existingUser;
 
+    // ----------------------------------------
+    // 2️⃣ If user does not exist → create new
+    // ----------------------------------------
     if (!existingUser) {
       const payload = {
         email,
@@ -273,47 +280,88 @@ export const googleCallback = async (req, res, next) => {
         avatar_url: avatarUrl,
       };
 
-      const { data: newUser, error } = await supabaseAdmin
+      const { data: newUser, error: insertErr } = await supabaseAdmin
         .from("users")
         .insert([payload])
         .select()
         .single();
-      if (error) throw error;
+
+      if (insertErr) throw insertErr;
+
       dbUser = newUser;
     }
 
-    // Create JWT token
+    // ----------------------------------------
+    // 3️⃣ UPGRADE LOGIC (visitor → business)
+    // ----------------------------------------
+    if (existingUser && existingUser.role === "visitor" && role === "business") {
+      const { data: upgradedUser, error: updateErr } = await supabaseAdmin
+        .from("users")
+        .update({ role: "business" })
+        .eq("email", email)
+        .select()
+        .single();
+
+      if (updateErr) throw updateErr;
+
+      dbUser = upgradedUser;
+    }
+
+    // ----------------------------------------
+    // 4️⃣ Reject invalid role downgrade (business → visitor)
+    // ----------------------------------------
+    if (existingUser && existingUser.role === "business" && role === "visitor") {
+      // Just let them login normally as business
+      dbUser = existingUser;
+    }
+
+    // ----------------------------------------
+    // 5️⃣ Generate JWT
+    // ----------------------------------------
     const token = jwt.sign(
-      { id: dbUser.id, email: dbUser.email, fullName: dbUser.full_name, role: dbUser.role },
+      {
+        id: dbUser.id,
+        email: dbUser.email,
+        fullName: dbUser.full_name,
+        role: dbUser.role,
+      },
       process.env.JWT_SECRET,
       { expiresIn: "1h" }
     );
 
-    // Redirect logic
+    // ----------------------------------------
+    // 6️⃣ Redirect based on platform & role
+    // ----------------------------------------
     if (platform === "web") {
       res.cookie("token", token, COOKIE_OPTIONS);
+
       let redirectUrl = "/";
+
       if (dbUser.role === "business") {
-        redirectUrl = intent === "signup" ? "/business/onboarding" : "/business/dashboard";
+        redirectUrl =
+          intent === "signup"
+            ? "/business/onboarding"
+            : "/business/dashboard";
       } else if (dbUser.role === "admin") {
         redirectUrl = "/admin/dashboard";
       }
+
       return res.redirect(`${process.env.NEXT_PUBLIC_API_URL}${redirectUrl}`);
     }
 
+    // Mobile redirect
     if (platform === "mobile" && mobileRedirectUri) {
-      // Redirect to the mobile deep link with token
       return res.redirect(`${mobileRedirectUri}?token=${token}`);
     }
 
-    // fallback JSON response
+    // Fallback response
     return res.status(200).json({ token, user: dbUser });
-
   } catch (err) {
     console.error("Google OAuth error:", err.response?.data || err.message);
     next(err);
   }
 };
+
 
 
 // Start Apple login
