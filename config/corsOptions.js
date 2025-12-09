@@ -5,7 +5,8 @@ const allowedOrigins = [
   'https://www.desi22.com',
   "http://localhost:3000",
   "http://localhost:8081",
-  "https://appleid.apple.com"
+  "https://appleid.apple.com",
+  "https://api.desi22.com"
 ];
 
 const corsOptions = {

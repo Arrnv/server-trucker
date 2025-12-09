@@ -407,19 +407,28 @@ router.get('/detail/:id', async (req, res) => {
   const { id } = req.params;
 
   try {
+    // 1️⃣ Fetch detail
     const { data: detail, error } = await supabase
       .from('details')
       .select(`
         *,
         gallery_urls,
-        business:businesses!details_business_id_fkey (
+        bookings:service_bookings (
           id,
-          name,
-          logo_url
+          note,
+          price,
+          booking_time
         ),
-        bookings(id, note, price, booking_time),
-        service_category:service_categories!details_service_category_id_fkey(icon_url),
-        place_category:place_categories!details_place_category_id_fkey(icon_url),
+        service_category:service_categories (
+          id,
+          label,
+          icon_url
+        ),
+        place_category:place_categories (
+          id,
+          label,
+          icon_url
+        ),
         detail_amenities (
           amenities (
             id,
@@ -436,41 +445,67 @@ router.get('/detail/:id', async (req, res) => {
       return res.status(500).json({ error: error.message });
     }
 
-    // 🔥 LOG COMPLETE RESPONSE
-    console.log("📌 DETAIL DATA:", JSON.stringify(detail, null, 2));
+    // 2️⃣ Fetch business separately
+    let business = null;
+    if (detail.business_id) {
+      const { data, error: businessError } = await supabase
+        .from('businesses')
+        .select('id, name, logo_url')
+        .eq('id', detail.business_id)
+        .single();
 
-    res.status(200).json(detail);
+      if (businessError) console.warn("⚠️ Failed to fetch business:", businessError.message);
+      else business = data;
+    }
+
+    // 3️⃣ Attach business to detail
+    detail.business = business;
+
+    return res.status(200).json(detail);
 
   } catch (err) {
     console.error("🔥 detail fetch error:", err.message);
-    res.status(500).json({ error: "Internal Server Error" });
+    return res.status(500).json({ error: "Internal Server Error" });
   }
 });
-
-
-
-
 router.get('/details/:type', async (req, res) => {
   const { type } = req.params;
-  const ids = req.query.ids; // Accepts comma-separated IDs, e.g., "1,2,3"
+  const ids = req.query.ids;
 
   if (!ids) return res.status(400).json({ error: 'Missing ids query param.' });
 
-  let column = null;
-  if (type === 'service') column = 'service_category_id';
-  else if (type === 'place') column = 'place_category_id';
-  else return res.status(400).json({ error: 'Invalid type. Must be "service" or "place".' });
+  const column = type === 'service' ? 'service_category_id' : type === 'place' ? 'place_category_id' : null;
+  if (!column) return res.status(400).json({ error: 'Invalid type. Must be "service" or "place".' });
 
   const idArray = ids.split(',');
 
   try {
+    console.log('Fetching details for column:', column, 'ids:', idArray);
+
     const { data: details, error } = await supabase
       .from('details')
       .select(`
         *,
-        bookings(id, note, price, booking_time),
-        service_category:service_categories!details_service_category_id_fkey(icon_url),
-        place_category:place_categories!details_place_category_id_fkey(icon_url),
+        bookings:service_bookings (
+          id,
+          note,
+          price,
+          status,
+          created_at,
+          updated_at,
+          option_id,
+          option_title
+        ),
+        service_category:service_categories (
+          id,
+          label,
+          icon_url
+        ),
+        place_category:place_categories (
+          id,
+          label,
+          icon_url
+        ),
         detail_amenities (
           amenities (
             id,
@@ -479,20 +514,49 @@ router.get('/details/:type', async (req, res) => {
           )
         )
       `)
-      .in(column, idArray);  // <-- Allow multiple values using `.in`
+      .in(column, idArray);
 
-    if (error) return res.status(500).json({ error: error.message });
-    if (!details || details.length === 0)
-      return res.status(404).json({ error: 'No matching details found.' });
+    if (error) {
+      console.error("Supabase details fetch error:", error);
+      return res.status(500).json({ error: error.message });
+    }
 
-    res.status(200).json(details);
-    console.log("📌 DETAIL DATA:", JSON.stringify(detail, null, 2));
+    console.log('Details fetched:', details.length);
+
+    const businessIds = [...new Set(details.map(d => d.business_id).filter(Boolean))];
+    console.log('Business IDs to fetch:', businessIds);
+
+    let businessesMap = {};
+    if (businessIds.length > 0) {
+      const { data: businesses, error: businessError } = await supabase
+        .from('businesses')
+        .select('id, name, logo_url')
+        .in('id', businessIds);
+
+      if (businessError) {
+        console.error("Supabase business fetch error:", businessError);
+        return res.status(500).json({ error: businessError.message });
+      }
+
+      businessesMap = businesses.reduce((acc, b) => {
+        acc[b.id] = b;
+        return acc;
+      }, {});
+    }
+
+    const detailsWithBusiness = details.map(d => ({
+      ...d,
+      business: businessesMap[d.business_id] || null
+    }));
+
+    return res.status(200).json(detailsWithBusiness);
 
   } catch (err) {
-    console.error("🔥 Unexpected error:", err.message);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Unexpected server error:", err);
+    return res.status(500).json({ error: err.message || 'Internal server error' });
   }
 });
+
 // In your Express router
 
 
