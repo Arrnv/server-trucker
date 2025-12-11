@@ -2,6 +2,44 @@ import express from 'express';
 const router = express.Router();
 import supabase from '../utils/supabaseClient.js';
 
+
+router.get('/details/search', async (req, res) => {
+  try {
+    const { name } = req.query;
+
+    if (!name) {
+      return res.status(400).json({ error: "Missing 'name' query parameter." });
+    }
+
+    const searchText = name.trim();
+
+    // Escape % and wrap the string properly for Supabase logic syntax
+    const encoded = searchText.replace(/%/g, '\\%');
+
+    const { data, error } = await supabase
+      .from('details')
+      .select(`
+        *,
+        service_category:service_categories(icon_url, label),
+        place_category:place_categories(icon_url, label)
+      `)
+      .or(`name.ilike.%${encoded}%,location.ilike.%${encoded}%,tags::text.ilike.%${encoded}%`)
+      .limit(20);
+
+    if (error) {
+      console.error("🔥 Supabase search error:", error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    res.status(200).json(data);
+
+  } catch (err) {
+    console.error("🔥 Unexpected error:", err.message);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+
 // ✅ GET /api/services - Fetch services and their details
 router.get('/services', async (req, res) => {
   try {
@@ -613,3 +651,4 @@ router.get('/business/:id', async (req, res) => {
 });
 
 export default router;
+
