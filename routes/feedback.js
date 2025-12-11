@@ -1,10 +1,11 @@
 import express from 'express';
 import supabase from '../utils/supabaseClient.js';
-import { authenticate } from '../middlewares/authMiddleware.js';
+// Dual auth: supports cookie + Bearer token
+import authenticateTokenDual from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
-// GET reviews
+// ----------------- GET reviews -----------------
 router.get('/:detailId', async (req, res) => {
   const { detailId } = req.params;
   const { data, error } = await supabase
@@ -24,8 +25,8 @@ router.get('/:detailId', async (req, res) => {
   res.json(formatted);
 });
 
-// POST review
-router.post('/:detailId', authenticate, async (req, res) => {
+// ----------------- POST review -----------------
+router.post('/:detailId', authenticateTokenDual, async (req, res) => {
   const { detailId } = req.params;
   const { rating, comment } = req.body;
   const userId = req.user?.id;

@@ -4,7 +4,7 @@ const allowedOrigins = [
   'https://www.pathsure.com',
   'https://www.desi22.com',
   "http://localhost:3000",
-  "http://localhost:8081",
+  "http://localhost:8000",
   "https://appleid.apple.com"
 ];
 

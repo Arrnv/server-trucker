@@ -6,26 +6,25 @@ import axios from "axios";
 import supabaseAdmin from '../utils/supabaseAdmin.js';
 dotenv.config();
 
-// const COOKIE_OPTIONS = {
-//   httpOnly: true,
-//   secure: false ,
-//   sameSite: 'Lax',
-//   maxAge: 60 * 60 * 1000, 
-// };
-
-
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: true,
-  sameSite: 'None',
-  domain: 'api.desi22.com',   // ✅ allow cookies for all subdomains, including backend
-  path: '/',               // ✅ cookie valid for entire site
-  maxAge: 60 * 60 * 1000,  // 1 hour
+  secure: false ,
+  sameSite: 'Lax',
+  maxAge: 60 * 60 * 1000, 
 };
+
+
+// const COOKIE_OPTIONS = {
+//   httpOnly: true,
+//   secure: true,
+//   sameSite: 'None',
+//   domain: 'api.desi22.com',   
+//   path: '/',               // ✅ cookie valid for entire site
+//   maxAge: 60 * 60 * 1000,  // 1 hour
+// };
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
-// ----------------- signup (email/password) -----------------
 export const signup = async (req, res, next) => {
   const { email, password, fullName, role } = req.body;
   if (!email || !password || !fullName)
@@ -37,15 +36,13 @@ export const signup = async (req, res, next) => {
       .from("users")
       .select("*")
       .eq("email", email)
-      .maybeSingle(); // <-- FIX
+      .maybeSingle();
 
     if (existingError) throw existingError;
 
     // 2️⃣ If user exists and same role → block
     if (existingUser && existingUser.role === role) {
-      return res
-        .status(400)
-        .json({ message: "User already exists with this role" });
+      return res.status(400).json({ message: "User already exists with this role" });
     }
 
     // 3️⃣ If user exists as visitor and wants business → UPGRADE
@@ -59,82 +56,54 @@ export const signup = async (req, res, next) => {
 
       if (updateError) throw updateError;
 
-      // Issue token after upgrade
-      const token = jwt.sign(
-        {
-          id: updatedUser.id,
-          email: updatedUser.email,
-          fullName: updatedUser.full_name,
-          role: updatedUser.role,
-        },
-        JWT_SECRET,
-        { expiresIn: "1h" }
-      );
+      const token = jwt.sign({
+        id: updatedUser.id,
+        email: updatedUser.email,
+        fullName: updatedUser.full_name,
+        role: updatedUser.role,
+      }, JWT_SECRET, { expiresIn: "1h" });
 
+      // ✅ Cookie + token in response
       res.cookie("token", token, COOKIE_OPTIONS);
-
-      return res.json({
-        user: {
-          id: updatedUser.id,
-          email: updatedUser.email,
-          fullName: updatedUser.full_name,
-          role: updatedUser.role,
-        },
-        message: "Role upgraded to business",
-      });
+      return res.json({ user: updatedUser, token, message: "Role upgraded to business" });
     }
 
-    // 4️⃣ If exists but role transition is invalid (ex: business → visitor)
+    // 4️⃣ Invalid role transition
     if (existingUser) {
-      return res
-        .status(400)
-        .json({ message: "User already exists with a different role" });
+      return res.status(400).json({ message: "User already exists with a different role" });
     }
 
-    // 5️⃣ Otherwise → Normal signup
+    // 5️⃣ Normal signup
     const hashedPassword = await bcrypt.hash(password, 10);
-
     const { data: newUser, error: insertError } = await supabase
       .from("users")
-      .insert([
-        { email, full_name: fullName, password: hashedPassword, role: role },
-      ])
+      .insert([{ email, full_name: fullName, password: hashedPassword, role }])
       .select()
       .single();
 
     if (insertError) throw insertError;
 
-    const token = jwt.sign(
-      {
-        id: newUser.id,
-        email: newUser.email,
-        fullName: newUser.full_name,
-        role: newUser.role,
-      },
-      JWT_SECRET,
-      { expiresIn: "1h" }
-    );
+    const token = jwt.sign({
+      id: newUser.id,
+      email: newUser.email,
+      fullName: newUser.full_name,
+      role: newUser.role,
+    }, JWT_SECRET, { expiresIn: "1h" });
 
     res.cookie("token", token, COOKIE_OPTIONS);
+    res.json({ user: newUser, token });
 
-    res.json({
-      user: {
-        id: newUser.id,
-        email: newUser.email,
-        fullName: newUser.full_name,
-        role: newUser.role,
-      },
-    });
   } catch (err) {
     console.error("Signup error:", err);
     next(err);
   }
 };
 
-
+// ----------------- login -----------------
 export const login = async (req, res, next) => {
   const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ message: 'Email and password required' });
+  if (!email || !password)
+    return res.status(400).json({ message: 'Email and password required' });
 
   try {
     const { data: user, error } = await supabase
@@ -144,17 +113,20 @@ export const login = async (req, res, next) => {
       .single();
 
     if (error || !user) return res.status(401).json({ message: 'Invalid credentials' });
-
-    // If user has no password (OAuth account), reject (they should use Google)
     if (!user.password) return res.status(401).json({ message: 'Use Google sign-in for this account' });
 
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) return res.status(401).json({ message: 'Invalid credentials' });
 
-    const token = jwt.sign({ id: user.id, email: user.email, fullName: user.full_name, role: user.role }, JWT_SECRET, { expiresIn: '1h' });
+    const token = jwt.sign({
+      id: user.id,
+      email: user.email,
+      fullName: user.full_name,
+      role: user.role,
+    }, JWT_SECRET, { expiresIn: '1h' });
 
     res.cookie('token', token, COOKIE_OPTIONS);
-    res.json({ user: { id: user.id, email: user.email, fullName: user.full_name, role: user.role } });
+    res.json({ user, token }); // ✅ Return token in response for Bearer auth
   } catch (err) {
     next(err);
   }
@@ -162,7 +134,6 @@ export const login = async (req, res, next) => {
 
 // ----------------- profile -----------------
 export const getProfile = async (req, res, next) => {
-  // auth middleware sets req.user
   const { email } = req.user || {};
   if (!email) return res.status(401).json({ message: 'Unauthorized' });
 
@@ -179,7 +150,6 @@ export const getProfile = async (req, res, next) => {
     next(err);
   }
 };
-
 // ----------------- logout -----------------
 export const logout = async (req, res) => {
   res.clearCookie('token');
@@ -189,14 +159,15 @@ export const logout = async (req, res) => {
 // ----------------- start Google OAuth (redirect user to Google) -----------------
 import querystring from 'querystring';
 
+
+// ----------------- Start Google OAuth -----------------
 export const startGoogleLogin = async (req, res) => {
-  const role = req.query.role || 'visitor';
-  const intent = req.query.intent || 'login';
-  const platform = req.query.platform || 'web';
-  const mobileRedirectUri = req.query.redirect_uri || null; 
+  const role = req.query.role || "visitor";
+  const intent = req.query.intent || "login";
+  const platform = req.query.platform || "web";
+  const mobileRedirectUri = req.query.redirect_uri || null;
 
   const redirectUri = `${process.env.BACKEND_URL}/api/auth/google/callback`;
-
   const state = encodeURIComponent(
     JSON.stringify({ role, intent, platform, mobileRedirectUri })
   );
@@ -204,25 +175,29 @@ export const startGoogleLogin = async (req, res) => {
   const params = {
     client_id: process.env.GOOGLE_CLIENT_ID,
     redirect_uri: redirectUri,
-    response_type: 'code',
-    scope: 'openid email profile',
-    access_type: 'offline',
-    prompt: 'consent',
+    response_type: "code",
+    scope: "openid email profile",
+    access_type: "offline",
+    prompt: "consent",
     state,
   };
 
-  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${querystring.stringify(params)}`;
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${querystring.stringify(
+    params
+  )}`;
 
   return res.redirect(authUrl);
 };
 
+// ----------------- Google Callback -----------------
 export const googleCallback = async (req, res, next) => {
   const { code, state: stateParam } = req.query;
   if (!code) return res.status(400).json({ message: "Missing code" });
 
   try {
+    // Parse state
     let role = "visitor";
-    let intent = "login";  
+    let intent = "login";
     let platform = "web";
     let mobileRedirectUri = null;
 
@@ -238,65 +213,62 @@ export const googleCallback = async (req, res, next) => {
       }
     }
 
-    // Exchange authorization code for tokens
-    const tokenRes = await axios.post("https://oauth2.googleapis.com/token", null, {
-      params: {
-        client_id: process.env.GOOGLE_CLIENT_ID,
-        client_secret: process.env.GOOGLE_CLIENT_SECRET,
-        code,
-        grant_type: "authorization_code",
-        redirect_uri: `${process.env.BACKEND_URL}/api/auth/google/callback`,
-      },
-    });
+    // Exchange code for tokens
+    const tokenRes = await axios.post(
+      "https://oauth2.googleapis.com/token",
+      null,
+      {
+        params: {
+          client_id: process.env.GOOGLE_CLIENT_ID,
+          client_secret: process.env.GOOGLE_CLIENT_SECRET,
+          code,
+          grant_type: "authorization_code",
+          redirect_uri: `${process.env.BACKEND_URL}/api/auth/google/callback`,
+        },
+      }
+    );
 
     const { id_token } = tokenRes.data;
-    const userInfo = JSON.parse(Buffer.from(id_token.split(".")[1], "base64").toString());
+    const userInfo = JSON.parse(
+      Buffer.from(id_token.split(".")[1], "base64").toString()
+    );
 
     const email = userInfo.email;
     const fullName = userInfo.name || "";
     const avatarUrl = userInfo.picture || null;
     const googleId = userInfo.sub || null;
 
-    // ----------------------------------------
-    // 1️⃣ Check if user exists
-    // ----------------------------------------
+    // ----------------- Check user -----------------
     const { data: existingUser, error: selectErr } = await supabaseAdmin
       .from("users")
       .select("*")
       .eq("email", email)
       .maybeSingle();
-
     if (selectErr) throw selectErr;
 
     let dbUser = existingUser;
 
-    // ----------------------------------------
-    // 2️⃣ If user does not exist → create new
-    // ----------------------------------------
+    // ----------------- Create new user if not exists -----------------
     if (!existingUser) {
-      const payload = {
-        email,
-        full_name: fullName,
-        password: null,
-        role,
-        google_id: googleId,
-        avatar_url: avatarUrl,
-      };
-
       const { data: newUser, error: insertErr } = await supabaseAdmin
         .from("users")
-        .insert([payload])
+        .insert([
+          {
+            email,
+            full_name: fullName,
+            password: null,
+            role,
+            google_id: googleId,
+            avatar_url: avatarUrl,
+          },
+        ])
         .select()
         .single();
-
       if (insertErr) throw insertErr;
-
       dbUser = newUser;
     }
 
-    // ----------------------------------------
-    // 3️⃣ UPGRADE LOGIC (visitor → business)
-    // ----------------------------------------
+    // ----------------- Upgrade visitor → business -----------------
     if (existingUser && existingUser.role === "visitor" && role === "business") {
       const { data: upgradedUser, error: updateErr } = await supabaseAdmin
         .from("users")
@@ -304,23 +276,16 @@ export const googleCallback = async (req, res, next) => {
         .eq("email", email)
         .select()
         .single();
-
       if (updateErr) throw updateErr;
-
       dbUser = upgradedUser;
     }
 
-    // ----------------------------------------
-    // 4️⃣ Reject invalid role downgrade (business → visitor)
-    // ----------------------------------------
+    // ----------------- Reject downgrade -----------------
     if (existingUser && existingUser.role === "business" && role === "visitor") {
-      // Just let them login normally as business
-      dbUser = existingUser;
+      dbUser = existingUser; // keep as business
     }
 
-    // ----------------------------------------
-    // 5️⃣ Generate JWT
-    // ----------------------------------------
+    // ----------------- Generate JWT -----------------
     const token = jwt.sign(
       {
         id: dbUser.id,
@@ -332,39 +297,36 @@ export const googleCallback = async (req, res, next) => {
       { expiresIn: "1h" }
     );
 
-    // ----------------------------------------
-    // 6️⃣ Redirect based on platform & role
-    // ----------------------------------------
+    // ----------------- Dual Auth: Cookie + Bearer -----------------
     if (platform === "web") {
+      // Cookie for web browsers
       res.cookie("token", token, COOKIE_OPTIONS);
 
       let redirectUrl = "/";
-
       if (dbUser.role === "business") {
         redirectUrl =
-          intent === "signup"
-            ? "/business/onboarding"
-            : "/business/dashboard";
+          intent === "signup" ? "/business/onboarding" : "/business/dashboard";
       } else if (dbUser.role === "admin") {
         redirectUrl = "/admin/dashboard";
       }
 
+      // You could also pass token in query for SPA if needed
       return res.redirect(`${process.env.NEXT_PUBLIC_API_URL}${redirectUrl}`);
     }
 
-    // Mobile redirect
+    // ----------------- Mobile / other platforms -----------------
     if (platform === "mobile" && mobileRedirectUri) {
+      // Send token in URL query for mobile app
       return res.redirect(`${mobileRedirectUri}?token=${token}`);
     }
 
-    // Fallback response
-    return res.status(200).json({ token, user: dbUser });
+    // ----------------- Fallback JSON -----------------
+    return res.status(200).json({ user: dbUser, token });
   } catch (err) {
     console.error("Google OAuth error:", err.response?.data || err.message);
     next(err);
   }
 };
-
 
 
 // Start Apple login
