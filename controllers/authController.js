@@ -18,7 +18,7 @@ const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: true,
   sameSite: 'None',
-  domain: '.desi22.com',   // ✅ allow cookies for all subdomains, including backend
+  domain: 'api.desi22.com',   // ✅ allow cookies for all subdomains, including backend
   path: '/',               // ✅ cookie valid for entire site
   maxAge: 60 * 60 * 1000,  // 1 hour
 };
