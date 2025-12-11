@@ -100,35 +100,36 @@ export const signup = async (req, res, next) => {
 };
 
 // ----------------- login -----------------
-export const login = async (req, res, next) => {
-  const { email, password } = req.body;
-  if (!email || !password)
-    return res.status(400).json({ message: 'Email and password required' });
-
+export const login = async (req, res) => {
   try {
+    const { email, password } = req.body;
+
     const { data: user, error } = await supabase
       .from('users')
       .select('*')
       .eq('email', email)
-      .single();
+      .maybeSingle();
 
-    if (error || !user) return res.status(401).json({ message: 'Invalid credentials' });
-    if (!user.password) return res.status(401).json({ message: 'Use Google sign-in for this account' });
+    if (error || !user) {
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }
 
     const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) return res.status(401).json({ message: 'Invalid credentials' });
+    if (!validPassword) {
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }
 
-    const token = jwt.sign({
-      id: user.id,
-      email: user.email,
-      fullName: user.full_name,
-      role: user.role,
-    }, JWT_SECRET, { expiresIn: '1h' });
+    const token = jwt.sign({ email: user.email }, process.env.JWT_SECRET, {
+      expiresIn: '7d',
+    });
 
-    res.cookie('token', token, COOKIE_OPTIONS);
-    res.json({ user, token }); // ✅ Return token in response for Bearer auth
+    return res.json({
+      user,
+      token, // FRONTEND MUST SAVE THIS
+    });
   } catch (err) {
-    next(err);
+    console.error("LOGIN ERROR: ", err);
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
