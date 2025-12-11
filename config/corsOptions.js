@@ -1,6 +1,7 @@
 const allowedOrigins = [
   'https://frontend-bmnm.vercel.app',
   'https://desi22.com',
+  'https://frontend-bmnm-git-main-krishnas-projects-9cf77ec8.vercel.app',
   'https://www.pathsure.com',
   'https://www.desi22.com',
   "http://localhost:3000",
