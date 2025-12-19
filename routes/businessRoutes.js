@@ -2,6 +2,7 @@ import express from "express";
 import authenticate from "../middlewares/authMiddleware.js";     // ⬅️ NEW universal middleware
 import appAuthMiddleware from "../middlewares/appAuthMiddleware.js";
 
+
 import {
   onboardBusiness,
   onboardBusiness1,
@@ -18,7 +19,6 @@ import supabase from "../utils/supabaseClient.js";
 
 const router = express.Router();
 
-/* ----------------------------- APP AUTH ROUTES ---------------------------- */
 router.post(
   "/onboardapp",
   appAuthMiddleware,
@@ -38,10 +38,8 @@ router.post(
   addDetailForBusiness
 );
 
-// Alerts for app
 router.get("/alerts/app/:id", appAuthMiddleware, getAlertsForService);
 
-/* ---------------------------- WEB AUTH ROUTES ----------------------------- */
 router.post(
   "/onboard",
   authenticate,
@@ -65,13 +63,10 @@ router.post(
   addDetailForBusiness
 );
 
-// Alerts for web
 router.get("/alerts/:id", authenticate, getAlertsForService);
 
-/* --------------------------- PUBLIC ROUTES -------------------------------- */
 router.get("/feedbacks/:detailId", getTodayFeedbacks);
 
-/* ------------------------ BUSINESS OWNER PROFILE -------------------------- */
 router.get("/me", authenticate, async (req, res) => {
   const userEmail = req.user.email;
 
