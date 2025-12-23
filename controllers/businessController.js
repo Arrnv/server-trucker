@@ -209,6 +209,7 @@ export const getMyBusiness = async (req, res, next) => {
       .eq('owner_email', email)
       .maybeSingle();
 
+      
     if (businessErr || !business) {
       return res.status(404).json({ message: 'No business found' });
     }

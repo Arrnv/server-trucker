@@ -153,9 +153,17 @@ export const getProfile = async (req, res, next) => {
 };
 // ----------------- logout -----------------
 export const logout = async (req, res) => {
-  res.clearCookie('token');
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: true,          // MUST match
+    sameSite: 'none',      // MUST match
+    path: '/',             // MUST match
+  });
+
   return res.status(200).json({ message: 'Logged out successfully' });
 };
+
+
 
 // ----------------- start Google OAuth (redirect user to Google) -----------------
 import querystring from 'querystring';
